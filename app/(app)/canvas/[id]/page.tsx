@@ -2,22 +2,37 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   ChevronLeft,
+  Copy,
+  LibraryBig,
   Loader2,
+  MoreHorizontal,
   Pencil,
   RefreshCw,
 } from "lucide-react";
 import { ApiError } from "@/lib/api";
-import { getCanvas, updateCanvas } from "@/lib/canvases";
+import {
+  duplicateCanvas,
+  getCanvas,
+  saveCanvasAsTemplate,
+  updateCanvas,
+} from "@/lib/canvases";
 import type { CanvasDetail } from "@/lib/types";
 import { formatRelativeDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CanvasEditor } from "@/components/canvas/CanvasEditor";
 
 export default function CanvasDetailPage() {
@@ -39,7 +54,10 @@ export default function CanvasDetailPage() {
         >
           <ChevronLeft className="h-4 w-4" /> Back to dashboard
         </Link>
-        <CanvasTitle canvas={query.data ?? null} isPending={query.isPending} />
+        <div className="flex items-center gap-2">
+          <CanvasTitle canvas={query.data ?? null} isPending={query.isPending} />
+          {query.data && <CanvasMenu canvas={query.data} />}
+        </div>
         <div className="hidden text-xs text-muted-foreground sm:block">
           {query.data
             ? `Updated ${formatRelativeDate(query.data.updated_at)}`
@@ -62,6 +80,76 @@ export default function CanvasDetailPage() {
         <CanvasEditor canvas={query.data} />
       ) : null}
     </div>
+  );
+}
+
+function CanvasMenu({ canvas }: { canvas: CanvasDetail }) {
+  const router = useRouter();
+  const qc = useQueryClient();
+
+  const duplicateMutation = useMutation({
+    mutationFn: () => duplicateCanvas(canvas.id),
+    onSuccess: (clone) => {
+      qc.invalidateQueries({ queryKey: ["canvases"] });
+      toast.success("Canvas duplicated");
+      router.push(`/canvas/${clone.id}`);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : "Could not duplicate canvas",
+      ),
+  });
+
+  const saveAsTemplateMutation = useMutation({
+    mutationFn: () => saveCanvasAsTemplate(canvas.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["canvas-templates"] });
+      qc.invalidateQueries({ queryKey: ["canvases"] });
+      toast.success("Saved as template");
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : "Could not save as template",
+      ),
+  });
+
+  const busy = duplicateMutation.isPending || saveAsTemplateMutation.isPending;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Canvas actions"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          disabled={busy}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="h-4 w-4" />
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            duplicateMutation.mutate();
+          }}
+        >
+          <Copy className="h-4 w-4" /> Duplicate canvas
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            saveAsTemplateMutation.mutate();
+          }}
+        >
+          <LibraryBig className="h-4 w-4" /> Save as template
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

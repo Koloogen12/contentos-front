@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -50,6 +51,9 @@ const KNOWLEDGE_TYPES: KnowledgeType[] = [
 ];
 
 export default function KnowledgePage() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("project");
+
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<KnowledgeType | "">("");
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -60,8 +64,16 @@ export default function KnowledgePage() {
     React.useState<KnowledgeItemOut | null>(null);
 
   const query = useQuery({
-    queryKey: ["knowledge", typeFilter || "all"],
-    queryFn: () => listKnowledge(typeFilter ? { type: typeFilter } : {}),
+    queryKey: [
+      "knowledge",
+      typeFilter || "all",
+      { projectId: projectId ?? null },
+    ],
+    queryFn: () =>
+      listKnowledge({
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      }),
   });
 
   const filtered = React.useMemo(() => {

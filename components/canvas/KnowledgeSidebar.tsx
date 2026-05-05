@@ -42,6 +42,12 @@ import { cn } from "@/lib/utils";
 interface KnowledgeSidebarProps {
   selectedNode: NodeOut | null;
   onClose: () => void;
+  /**
+   * The owning canvas's project_id. When set, the "library browse" view
+   * filters to that project (so a project canvas only sees its own
+   * knowledge); otherwise we show the org-level library.
+   */
+  canvasProjectId?: string | null;
 }
 
 const KNOWLEDGE_TYPES: KnowledgeType[] = [
@@ -55,6 +61,7 @@ const KNOWLEDGE_TYPES: KnowledgeType[] = [
 export function KnowledgeSidebar({
   selectedNode,
   onClose,
+  canvasProjectId,
 }: KnowledgeSidebarProps) {
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-border bg-[#0d0f10]">
@@ -73,15 +80,24 @@ export function KnowledgeSidebar({
         </button>
       </div>
       {selectedNode ? (
-        <NodeKnowledgePanel node={selectedNode} />
+        <NodeKnowledgePanel
+          node={selectedNode}
+          canvasProjectId={canvasProjectId ?? null}
+        />
       ) : (
-        <OrgBrowsePanel />
+        <OrgBrowsePanel canvasProjectId={canvasProjectId ?? null} />
       )}
     </aside>
   );
 }
 
-function NodeKnowledgePanel({ node }: { node: NodeOut }) {
+function NodeKnowledgePanel({
+  node,
+  canvasProjectId,
+}: {
+  node: NodeOut;
+  canvasProjectId: string | null;
+}) {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -93,8 +109,16 @@ function NodeKnowledgePanel({ node }: { node: NodeOut }) {
   });
 
   const allQuery = useQuery({
-    queryKey: ["knowledge", typeFilter || "all"],
-    queryFn: () => listKnowledge(typeFilter ? { type: typeFilter } : {}),
+    queryKey: [
+      "knowledge",
+      typeFilter || "all",
+      { projectId: canvasProjectId ?? null },
+    ],
+    queryFn: () =>
+      listKnowledge({
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(canvasProjectId ? { project_id: canvasProjectId } : {}),
+      }),
   });
 
   const attachMutation = useMutation({
@@ -244,13 +268,25 @@ function NodeKnowledgePanel({ node }: { node: NodeOut }) {
   );
 }
 
-function OrgBrowsePanel() {
+function OrgBrowsePanel({
+  canvasProjectId,
+}: {
+  canvasProjectId: string | null;
+}) {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<KnowledgeType | "">("");
   const allQuery = useQuery({
-    queryKey: ["knowledge", typeFilter || "all"],
-    queryFn: () => listKnowledge(typeFilter ? { type: typeFilter } : {}),
+    queryKey: [
+      "knowledge",
+      typeFilter || "all",
+      { projectId: canvasProjectId ?? null },
+    ],
+    queryFn: () =>
+      listKnowledge({
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(canvasProjectId ? { project_id: canvasProjectId } : {}),
+      }),
   });
 
   const filtered = React.useMemo(() => {

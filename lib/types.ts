@@ -115,7 +115,21 @@ export type FormatPlatform =
   | "instagram"
   | "linkedin"
   | "twitter"
-  | "article";
+  | "article"
+  | "carousel"
+  | "reels";
+
+export interface CarouselSlide {
+  title: string;
+  body: string;
+  is_cover?: boolean;
+}
+
+export interface ReelsBeat {
+  script: string;
+  visual: string;
+  duration_sec: number;
+}
 
 export interface FormatNodeData {
   platform?: FormatPlatform;
@@ -125,6 +139,13 @@ export interface FormatNodeData {
   body?: string;
   cta?: string;
   full_text?: string;
+  // Carousel-specific
+  slides?: CarouselSlide[];
+  summary?: string;
+  // Reels-specific
+  beats?: ReelsBeat[];
+  caption?: string;
+  duration_sec?: number;
 }
 
 // ----- Skill runs -----
@@ -295,4 +316,55 @@ export interface VoiceTraitsExtracted {
   recurring_phrases: string[];
   tone_calibration: string;
   samples_analyzed: number;
+}
+
+// ----- Projects -----
+
+export interface ProjectContext {
+  product_description?: string;
+  target_audience?: string;
+  key_themes?: string[] | string;
+  tone_notes?: string;
+  [key: string]: unknown;
+}
+
+export interface ProjectOut {
+  id: UUID;
+  organization_id: UUID;
+  name: string;
+  color: string;
+  context: ProjectContext;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCreate {
+  name: string;
+  color?: string;
+  context?: ProjectContext;
+}
+
+export interface ProjectUpdate {
+  name?: string;
+  color?: string;
+  context?: ProjectContext;
+}
+
+// ----- Iter D bulk run-all -----
+
+/**
+ * Each entry in the run-all response carries the node_id alongside the
+ * standard SkillRunStarted shape so the caller can wire each run up to its
+ * node's status / refetch lifecycle.
+ *
+ * If the backend doesn't include `node_id`, we resolve it lazily via
+ * `GET /skill-runs/{id}`.
+ */
+export interface BulkRunSkillRunStarted extends SkillRunStarted {
+  node_id?: UUID;
+}
+
+export interface BulkRunStarted {
+  skill_runs: BulkRunSkillRunStarted[];
+  skipped: number;
 }

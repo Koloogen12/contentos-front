@@ -4,7 +4,13 @@ import * as React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Check, Copy, Loader2, Play, Send } from "lucide-react";
 import { toast } from "sonner";
-import type { FormatNodeData, FormatPlatform, NodeOut } from "@/lib/types";
+import type {
+  CarouselSlide,
+  FormatNodeData,
+  FormatPlatform,
+  NodeOut,
+  ReelsBeat,
+} from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { cn } from "@/lib/utils";
 import { NODE_HANDLE_STYLE, NodeShell } from "./NodeShell";
@@ -19,6 +25,8 @@ interface FormatNodeRfData {
 const PLATFORM_OPTIONS: { value: FormatPlatform; label: string }[] = [
   { value: "telegram", label: "Telegram" },
   { value: "linkedin", label: "LinkedIn" },
+  { value: "carousel", label: "Carousel" },
+  { value: "reels", label: "Reels" },
 ];
 
 export function FormatNode({ data, selected }: NodeProps) {
@@ -31,9 +39,18 @@ export function FormatNode({ data, selected }: NodeProps) {
   const platform: FormatPlatform = format.platform ?? "telegram";
   const hooks = format.hooks ?? [];
   const selectedHook = format.selected_hook_index ?? 0;
+  const slides = format.slides ?? [];
+  const beats = format.beats ?? [];
   const [copied, setCopied] = React.useState(false);
   const [publishOpen, setPublishOpen] = React.useState(false);
   const canPublish = !!format.full_text && platform === "telegram";
+
+  // What signals "this format has output" varies by platform.
+  const hasOutput = React.useMemo(() => {
+    if (platform === "carousel") return slides.length > 0;
+    if (platform === "reels") return beats.length > 0 || hooks.length > 0;
+    return hooks.length > 0;
+  }, [platform, slides.length, beats.length, hooks.length]);
 
   const onPlatformChange = async (next: FormatPlatform) => {
     if (next === platform) return;
@@ -57,6 +74,15 @@ export function FormatNode({ data, selected }: NodeProps) {
     }
   };
 
+  const subhead = React.useMemo(() => {
+    if (platform === "carousel" && slides.length > 0)
+      return `${slides.length} slides generated`;
+    if (platform === "reels" && beats.length > 0)
+      return `${beats.length} beats · ~${format.duration_sec ?? "?"}s`;
+    if (hooks.length > 0) return `${hooks.length} hooks generated`;
+    return undefined;
+  }, [platform, slides.length, beats.length, hooks.length, format.duration_sec]);
+
   return (
     <>
       <Handle
@@ -70,9 +96,7 @@ export function FormatNode({ data, selected }: NodeProps) {
         selected={!!selected}
         expanded={expanded}
         onToggleExpanded={typed.onToggleExpanded}
-        subhead={
-          hooks.length > 0 ? `${hooks.length} hooks generated` : undefined
-        }
+        subhead={subhead}
         headerActions={
           <button
             type="button"
@@ -93,130 +117,72 @@ export function FormatNode({ data, selected }: NodeProps) {
         }
       >
         <div className="space-y-2.5">
-          <div className="nodrag flex items-center gap-1 rounded-md border border-white/5 bg-black/30 p-0.5">
-            {PLATFORM_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={cn(
-                  "flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                  platform === opt.value
-                    ? "bg-white/10 text-foreground"
-                    : "text-zinc-400 hover:text-zinc-200",
-                )}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onPlatformChange(opt.value);
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <PlatformPicker platform={platform} onChange={onPlatformChange} />
 
-          {hooks.length === 0 ? (
+          {!hasOutput ? (
             <p className="text-xs leading-relaxed text-zinc-500">
               Connect a talking point and click Run.
             </p>
+          ) : platform === "carousel" ? (
+            <CarouselBody
+              slides={slides}
+              summary={format.summary}
+              cta={format.cta}
+              expanded={expanded}
+            />
+          ) : platform === "reels" ? (
+            <ReelsBody
+              hooks={hooks}
+              selectedHook={selectedHook}
+              onSelectHook={onSelectHook}
+              beats={beats}
+              cta={format.cta}
+              caption={format.caption}
+              expanded={expanded}
+            />
           ) : (
-            <>
-              <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-                  Hooks
-                </div>
-                <ul className="space-y-1">
-                  {hooks.map((hook, i) => {
-                    const isSelected = selectedHook === i;
-                    return (
-                      <li key={i}>
-                        <button
-                          type="button"
-                          className={cn(
-                            "nodrag flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] leading-snug transition-colors",
-                            isSelected
-                              ? "border-primary/60 bg-primary/10 text-foreground"
-                              : "border-white/5 bg-black/30 text-zinc-300 hover:bg-black/50",
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void onSelectHook(i);
-                          }}
-                        >
-                          <span
-                            className={cn(
-                              "mt-0.5 h-3 w-3 shrink-0 rounded-full border",
-                              isSelected
-                                ? "border-primary bg-primary"
-                                : "border-zinc-500",
-                            )}
-                            aria-hidden
-                          />
-                          <span
-                            className={cn(
-                              expanded ? "line-clamp-none" : "line-clamp-2",
-                            )}
-                          >
-                            {hook}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+            <PostBody
+              hooks={hooks}
+              selectedHook={selectedHook}
+              onSelectHook={onSelectHook}
+              body={format.body}
+              cta={format.cta}
+              expanded={expanded}
+            />
+          )}
 
-              {expanded && format.body && (
-                <div className="space-y-1">
-                  <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-                    Body
-                  </div>
-                  <div className="scrollbar-thin max-h-[180px] overflow-auto whitespace-pre-wrap rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-relaxed text-zinc-200">
-                    {format.body}
-                  </div>
-                </div>
-              )}
-
-              {format.cta && (
-                <div className="text-[11px] text-zinc-400">
-                  <span className="text-zinc-500">CTA:</span>{" "}
-                  <span className="font-medium text-zinc-200">
-                    {format.cta}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-1.5">
+          {hasOutput && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onCopy();
+                }}
+                disabled={!format.full_text}
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </button>
+              {canPublish && (
                 <button
                   type="button"
-                  className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={(e) => {
                     e.stopPropagation();
-                    void onCopy();
+                    setPublishOpen(true);
                   }}
-                  disabled={!format.full_text}
                 >
-                  {copied ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                  {copied ? "Copied" : "Copy"}
+                  <Send className="h-3 w-3" />
+                  Publish to Telegram
                 </button>
-                {canPublish && (
-                  <button
-                    type="button"
-                    className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPublishOpen(true);
-                    }}
-                  >
-                    <Send className="h-3 w-3" />
-                    Publish to Telegram
-                  </button>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
         </div>
       </NodeShell>
@@ -226,6 +192,336 @@ export function FormatNode({ data, selected }: NodeProps) {
           open={publishOpen}
           onOpenChange={setPublishOpen}
         />
+      )}
+    </>
+  );
+}
+
+function PlatformPicker({
+  platform,
+  onChange,
+}: {
+  platform: FormatPlatform;
+  onChange: (next: FormatPlatform) => Promise<void>;
+}) {
+  return (
+    <div className="nodrag grid grid-cols-2 gap-1 rounded-md border border-white/5 bg-black/30 p-0.5">
+      {PLATFORM_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className={cn(
+            "rounded px-2 py-1 text-[11px] font-medium transition-colors",
+            platform === opt.value
+              ? "bg-white/10 text-foreground"
+              : "text-zinc-400 hover:text-zinc-200",
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            void onChange(opt.value);
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ----- Telegram / LinkedIn body --------------------------------------
+
+function PostBody({
+  hooks,
+  selectedHook,
+  onSelectHook,
+  body,
+  cta,
+  expanded,
+}: {
+  hooks: string[];
+  selectedHook: number;
+  onSelectHook: (i: number) => Promise<void>;
+  body: string | undefined;
+  cta: string | undefined;
+  expanded: boolean;
+}) {
+  return (
+    <>
+      <div className="space-y-1">
+        <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+          Hooks
+        </div>
+        <ul className="space-y-1">
+          {hooks.map((hook, i) => {
+            const isSelected = selectedHook === i;
+            return (
+              <li key={i}>
+                <button
+                  type="button"
+                  className={cn(
+                    "nodrag flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] leading-snug transition-colors",
+                    isSelected
+                      ? "border-primary/60 bg-primary/10 text-foreground"
+                      : "border-white/5 bg-black/30 text-zinc-300 hover:bg-black/50",
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onSelectHook(i);
+                  }}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 h-3 w-3 shrink-0 rounded-full border",
+                      isSelected
+                        ? "border-primary bg-primary"
+                        : "border-zinc-500",
+                    )}
+                    aria-hidden
+                  />
+                  <span
+                    className={cn(
+                      expanded ? "line-clamp-none" : "line-clamp-2",
+                    )}
+                  >
+                    {hook}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {expanded && body && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+            Body
+          </div>
+          <div className="scrollbar-thin max-h-[180px] overflow-auto whitespace-pre-wrap rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-relaxed text-zinc-200">
+            {body}
+          </div>
+        </div>
+      )}
+
+      {cta && (
+        <div className="text-[11px] text-zinc-400">
+          <span className="text-zinc-500">CTA:</span>{" "}
+          <span className="font-medium text-zinc-200">{cta}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ----- Carousel body -------------------------------------------------
+
+function CarouselBody({
+  slides,
+  summary,
+  cta,
+  expanded,
+}: {
+  slides: CarouselSlide[];
+  summary: string | undefined;
+  cta: string | undefined;
+  expanded: boolean;
+}) {
+  const visibleSlides = expanded ? slides : slides.slice(0, 3);
+  return (
+    <>
+      <div className="space-y-1">
+        <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+          Slides
+        </div>
+        <ul className="space-y-1.5">
+          {visibleSlides.map((slide, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-white/5 bg-black/30 p-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-primary/20 text-[9px] font-semibold text-primary">
+                  {i + 1}
+                </span>
+                <span className="line-clamp-1 text-[11px] font-medium text-zinc-100">
+                  {slide.title}
+                </span>
+                {slide.is_cover && (
+                  <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                    Cover
+                  </span>
+                )}
+              </div>
+              <p
+                className={cn(
+                  "mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-300",
+                  expanded ? "" : "line-clamp-2",
+                )}
+              >
+                {slide.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+        {!expanded && slides.length > visibleSlides.length && (
+          <p className="text-[10px] text-zinc-500">
+            +{slides.length - visibleSlides.length} more · expand to see all
+          </p>
+        )}
+      </div>
+
+      {expanded && summary && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+            Summary
+          </div>
+          <p className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200">
+            {summary}
+          </p>
+        </div>
+      )}
+
+      {cta && (
+        <div className="text-[11px] text-zinc-400">
+          <span className="text-zinc-500">CTA:</span>{" "}
+          <span className="font-medium text-zinc-200">{cta}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ----- Reels body ----------------------------------------------------
+
+function ReelsBody({
+  hooks,
+  selectedHook,
+  onSelectHook,
+  beats,
+  cta,
+  caption,
+  expanded,
+}: {
+  hooks: string[];
+  selectedHook: number;
+  onSelectHook: (i: number) => Promise<void>;
+  beats: ReelsBeat[];
+  cta: string | undefined;
+  caption: string | undefined;
+  expanded: boolean;
+}) {
+  const visibleBeats = expanded ? beats : beats.slice(0, 2);
+  return (
+    <>
+      {hooks.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+            Hooks
+          </div>
+          <ul className="space-y-1">
+            {hooks.map((hook, i) => {
+              const isSelected = selectedHook === i;
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "nodrag flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] leading-snug transition-colors",
+                      isSelected
+                        ? "border-primary/60 bg-primary/10 text-foreground"
+                        : "border-white/5 bg-black/30 text-zinc-300 hover:bg-black/50",
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void onSelectHook(i);
+                    }}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 h-3 w-3 shrink-0 rounded-full border",
+                        isSelected
+                          ? "border-primary bg-primary"
+                          : "border-zinc-500",
+                      )}
+                      aria-hidden
+                    />
+                    <span
+                      className={cn(
+                        expanded ? "line-clamp-none" : "line-clamp-2",
+                      )}
+                    >
+                      {hook}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {beats.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+            Beats
+          </div>
+          <ol className="space-y-1.5">
+            {visibleBeats.map((beat, i) => (
+              <li
+                key={i}
+                className="rounded-md border border-white/5 bg-black/30 p-2"
+              >
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-primary/20 text-[9px] font-semibold text-primary">
+                    {i + 1}
+                  </span>
+                  <span>~{beat.duration_sec}s</span>
+                </div>
+                <p
+                  className={cn(
+                    "mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-200",
+                    expanded ? "" : "line-clamp-2",
+                  )}
+                >
+                  {beat.script}
+                </p>
+                {beat.visual && (
+                  <p
+                    className={cn(
+                      "mt-1 whitespace-pre-wrap text-[11px] italic leading-snug text-zinc-400",
+                      expanded ? "" : "line-clamp-1",
+                    )}
+                  >
+                    {beat.visual}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {!expanded && beats.length > visibleBeats.length && (
+            <p className="text-[10px] text-zinc-500">
+              +{beats.length - visibleBeats.length} more · expand to see all
+            </p>
+          )}
+        </div>
+      )}
+
+      {expanded && caption && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+            Caption
+          </div>
+          <p className="whitespace-pre-wrap rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200">
+            {caption}
+          </p>
+        </div>
+      )}
+
+      {cta && (
+        <div className="text-[11px] text-zinc-400">
+          <span className="text-zinc-500">CTA:</span>{" "}
+          <span className="font-medium text-zinc-200">{cta}</span>
+        </div>
       )}
     </>
   );

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError, fetchMe, registerRequest } from "@/lib/api";
+import { decidePostAuthRoute } from "@/lib/post-auth-redirect";
 import { AuthCard } from "@/components/AuthCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,7 +69,8 @@ export default function RegisterPage() {
       const me = await fetchMe();
       setMe({ user: me.user, organization: me.organization });
       setHydrating(false);
-      router.replace("/dashboard");
+      const route = await decidePostAuthRoute();
+      router.replace(route);
     } catch (err) {
       if (err instanceof ApiError) {
         setServerError(

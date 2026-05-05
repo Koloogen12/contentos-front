@@ -25,13 +25,17 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Loader2, Zap } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
-import { getCanvas } from "@/lib/canvases";
+import { getCanvas, runAllOnCanvas } from "@/lib/canvases";
 import { createNode, deleteNode, updateNode } from "@/lib/nodes";
 import { createEdge, deleteEdge } from "@/lib/edges";
-import { runNode as runNodeApi, subscribeSkillRun } from "@/lib/skill-runs";
+import {
+  getSkillRun,
+  runNode as runNodeApi,
+  subscribeSkillRun,
+} from "@/lib/skill-runs";
 import type {
   CanvasDetail,
   EdgeOut,
@@ -582,6 +586,50 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [attachSubscription],
   );
 
+  // ----- Bulk run-all -----
+  const runnableCount = React.useMemo(() => {
+    return rfNodes.filter(
+      (n) => n.data.node.type === "extract" || n.data.node.type === "format",
+    ).length;
+  }, [rfNodes]);
+
+  const runAllMutation = useMutation({
+    mutationFn: () => runAllOnCanvas(canvasId),
+    onSuccess: async (result) => {
+      const started = result.skill_runs.length;
+      toast.success(
+        `Started ${started} ${started === 1 ? "run" : "runs"} · Skipped ${
+          result.skipped
+        }`,
+      );
+      // Wire each started run to the per-node subscription pipeline. The
+      // backend response carries `skill_run_id` only — resolve `node_id`
+      // lazily via GET /skill-runs/{id} when missing.
+      await Promise.all(
+        result.skill_runs.map(async (s) => {
+          let nodeId = s.node_id;
+          if (!nodeId) {
+            try {
+              const run = await getSkillRun(s.skill_run_id);
+              nodeId = run.node_id;
+            } catch {
+              return;
+            }
+          }
+          attachSubscription(
+            nodeId,
+            s.skill_run_id,
+            "Skill run completed",
+          );
+        }),
+      );
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : "Could not start bulk run",
+      ),
+  });
+
   const isRunning = React.useCallback(
     (nodeId: string) => !!runningRuns[nodeId],
     [runningRuns],
@@ -624,16 +672,36 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             onAddNode={handleAddNode}
             busy={createNodeMutation.isPending}
           />
-          {!sidebarOpen && (
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#11140E]/95 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-xl backdrop-blur hover:bg-white/5"
+              onClick={() => runAllMutation.mutate()}
+              disabled={runAllMutation.isPending || runnableCount === 0}
+              title={
+                runnableCount === 0
+                  ? "No extract or format nodes on this canvas"
+                  : "Run every runnable extract/format node"
+              }
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#11140E]/95 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-xl backdrop-blur hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <BookOpen className="h-3.5 w-3.5" />
-              Knowledge
+              {runAllMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+              Run all
             </button>
-          )}
+            {!sidebarOpen && (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#11140E]/95 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-xl backdrop-blur hover:bg-white/5"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Knowledge
+              </button>
+            )}
+          </div>
           <ReactFlow<RfNode<RfNodeData>, RfEdge>
             nodes={rfNodes}
             edges={rfEdges}
@@ -680,6 +748,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           <KnowledgeSidebar
             selectedNode={selectedNode}
             onClose={() => setSidebarOpen(false)}
+            canvasProjectId={canvas.project_id}
           />
         )}
       </div>
