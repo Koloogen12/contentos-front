@@ -32,6 +32,11 @@ export interface CanvasNodeContextValue {
   getNode: (nodeId: string) => NodeOut | undefined;
   /** Returns true while a skill-run for this node is in flight. */
   isRunning: (nodeId: string) => boolean;
+  /**
+   * When true, the node renders in a non-interactive read-only flavor:
+   * no Run / Publish / autosave / mutating UI. Used by the public viewer.
+   */
+  readOnly?: boolean;
 }
 
 export const CanvasNodeContext =

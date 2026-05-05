@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,7 +28,17 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function RegisterPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <RegisterForm />
+    </React.Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const setTokens = useAuthStore((s) => s.setTokens);
   const setMe = useAuthStore((s) => s.setMe);
   const setHydrating = useAuthStore((s) => s.setHydrating);
@@ -69,7 +79,7 @@ export default function RegisterPage() {
       const me = await fetchMe();
       setMe({ user: me.user, organization: me.organization });
       setHydrating(false);
-      const route = await decidePostAuthRoute();
+      const route = await decidePostAuthRoute({ next });
       router.replace(route);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -90,7 +100,9 @@ export default function RegisterPage() {
         <>
           Already have an account?{" "}
           <Link
-            href="/login"
+            href={
+              next ? `/login?next=${encodeURIComponent(next)}` : "/login"
+            }
             className="font-medium text-foreground hover:text-primary"
           >
             Sign in

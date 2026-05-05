@@ -71,7 +71,7 @@ export function SourceNode({ data, selected }: NodeProps) {
   const typed = data as unknown as SourceNodeRfData;
   const node = typed.node;
   const expanded = typed.expanded;
-  const { updateNodeData, attachSkillRun, isRunning } =
+  const { updateNodeData, attachSkillRun, isRunning, readOnly } =
     useCanvasNodeContext();
   const sourceData = (node.data ?? {}) as SourceNodeData;
   const running = isRunning(node.id);
@@ -203,6 +203,51 @@ export function SourceNode({ data, selected }: NodeProps) {
     sourceData.file_name,
     sourceData.transcript_method,
   ]);
+
+  if (readOnly) {
+    // Public viewer: render just the content, scrubbed of YouTube URL,
+    // file metadata, and transcript-method tags. Text content stays.
+    const publicSubhead = sourceData.transcript_method
+      ? "Transcript"
+      : sourceData.input_type === "youtube"
+        ? "YouTube source"
+        : sourceData.input_type === "file_upload"
+          ? "Audio source"
+          : "Text";
+    const text = sourceData.content?.trim() ?? "";
+    return (
+      <>
+        <NodeShell
+          title="Source"
+          status={node.status}
+          selected={!!selected}
+          expanded={expanded}
+          onToggleExpanded={typed.onToggleExpanded}
+          subhead={publicSubhead}
+        >
+          {text ? (
+            <p
+              className={cn(
+                "whitespace-pre-wrap text-xs leading-relaxed text-zinc-300/90",
+                expanded ? "" : "line-clamp-4",
+              )}
+            >
+              {text}
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-zinc-500">
+              (No content)
+            </p>
+          )}
+        </NodeShell>
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={NODE_HANDLE_STYLE}
+        />
+      </>
+    );
+  }
 
   return (
     <>

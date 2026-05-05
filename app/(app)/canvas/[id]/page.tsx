@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Pencil,
   RefreshCw,
+  Share2,
 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import {
@@ -34,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CanvasEditor } from "@/components/canvas/CanvasEditor";
+import { ShareDialog } from "@/components/canvas/ShareDialog";
 
 export default function CanvasDetailPage() {
   const params = useParams<{ id: string }>();
@@ -86,6 +88,7 @@ export default function CanvasDetailPage() {
 function CanvasMenu({ canvas }: { canvas: CanvasDetail }) {
   const router = useRouter();
   const qc = useQueryClient();
+  const [shareOpen, setShareOpen] = React.useState(false);
 
   const duplicateMutation = useMutation({
     mutationFn: () => duplicateCanvas(canvas.id),
@@ -116,40 +119,55 @@ function CanvasMenu({ canvas }: { canvas: CanvasDetail }) {
   const busy = duplicateMutation.isPending || saveAsTemplateMutation.isPending;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Canvas actions"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-          disabled={busy}
-        >
-          {busy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <MoreHorizontal className="h-4 w-4" />
-          )}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
-            duplicateMutation.mutate();
-          }}
-        >
-          <Copy className="h-4 w-4" /> Duplicate canvas
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
-            saveAsTemplateMutation.mutate();
-          }}
-        >
-          <LibraryBig className="h-4 w-4" /> Save as template
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Canvas actions"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+            disabled={busy}
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <MoreHorizontal className="h-4 w-4" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setShareOpen(true);
+            }}
+          >
+            <Share2 className="h-4 w-4" /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              duplicateMutation.mutate();
+            }}
+          >
+            <Copy className="h-4 w-4" /> Duplicate canvas
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              saveAsTemplateMutation.mutate();
+            }}
+          >
+            <LibraryBig className="h-4 w-4" /> Save as template
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ShareDialog
+        canvasId={canvas.id}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
+    </>
   );
 }
 

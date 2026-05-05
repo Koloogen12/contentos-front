@@ -18,13 +18,15 @@ export function ExtractNode({ data, selected }: NodeProps) {
   const typed = data as unknown as ExtractNodeRfData;
   const node = typed.node;
   const expanded = typed.expanded;
-  const { updateNodeData, runNode, isRunning } = useCanvasNodeContext();
+  const { updateNodeData, runNode, isRunning, readOnly } =
+    useCanvasNodeContext();
   const running = isRunning(node.id);
   const extract = (node.data ?? {}) as ExtractNodeData;
   const points = extract.talking_points ?? [];
   const selectedIndex = extract.selected_index ?? null;
 
   const selectPoint = async (index: number) => {
+    if (readOnly) return;
     if (selectedIndex === index) return;
     await updateNodeData(node.id, { selected_index: index });
   };
@@ -46,23 +48,25 @@ export function ExtractNode({ data, selected }: NodeProps) {
           points.length > 0 ? `${points.length} talking points` : undefined
         }
         headerActions={
-          <button
-            type="button"
-            className="nodrag inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={(e) => {
-              e.stopPropagation();
-              runNode(node.id);
-            }}
-            disabled={running}
-            title="Run viral_talking_points skill"
-          >
-            {running ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Play className="h-3 w-3" />
-            )}
-            Run
-          </button>
+          readOnly ? null : (
+            <button
+              type="button"
+              className="nodrag inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={(e) => {
+                e.stopPropagation();
+                runNode(node.id);
+              }}
+              disabled={running}
+              title="Run viral_talking_points skill"
+            >
+              {running ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+              Run
+            </button>
+          )
         }
       >
         {points.length === 0 ? (

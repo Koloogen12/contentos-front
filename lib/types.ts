@@ -112,12 +112,10 @@ export interface ExtractNodeData {
 
 export type FormatPlatform =
   | "telegram"
-  | "instagram"
   | "linkedin"
-  | "twitter"
-  | "article"
   | "carousel"
-  | "reels";
+  | "reels"
+  | "hooks";
 
 export interface CarouselSlide {
   title: string;
@@ -129,6 +127,21 @@ export interface ReelsBeat {
   script: string;
   visual: string;
   duration_sec: number;
+}
+
+export type HookTrigger =
+  | "paradox"
+  | "number"
+  | "contrast"
+  | "provocation"
+  | "story"
+  | "dissonance"
+  | "question"
+  | "other";
+
+export interface HookEntry {
+  text: string;
+  trigger: HookTrigger;
 }
 
 export interface FormatNodeData {
@@ -146,6 +159,8 @@ export interface FormatNodeData {
   beats?: ReelsBeat[];
   caption?: string;
   duration_sec?: number;
+  // Hooks-specific
+  hooks_bank?: HookEntry[];
 }
 
 // ----- Skill runs -----
@@ -367,4 +382,31 @@ export interface BulkRunSkillRunStarted extends SkillRunStarted {
 export interface BulkRunStarted {
   skill_runs: BulkRunSkillRunStarted[];
   skipped: number;
+}
+
+// ----- Sharing & cross-org cloning (CONTRACTS.md §7.2) -----
+
+export interface CanvasShareTokenOut {
+  id: UUID;
+  canvas_id: UUID;
+  token: string;
+  created_by_user_id: UUID;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface CanvasShareTokenCreated {
+  id: UUID;
+  token: string;
+  url_path: string;
+}
+
+export interface PublicCanvasOut {
+  id: UUID;
+  name: string;
+  description: string | null;
+  organization_name: string;
+  nodes: NodeOut[];
+  edges: EdgeOut[];
+  created_at: string;
 }
