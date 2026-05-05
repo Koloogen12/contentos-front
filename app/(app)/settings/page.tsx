@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
+import { VoiceTrainingSection } from "@/components/VoiceTrainingSection";
 
 const schema = z.object({
   author_name: z.string().optional(),
@@ -36,7 +37,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-12 px-6 py-10">
-      <section className="space-y-4">
+      <section id="brand-context-section" className="space-y-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">
             Brand context
@@ -68,6 +69,10 @@ export default function SettingsPage() {
       <div className="border-t border-border" />
 
       <TelegramTargetsSection />
+
+      <div className="border-t border-border" />
+
+      <VoiceTrainingSection />
     </div>
   );
 }

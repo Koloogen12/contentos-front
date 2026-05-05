@@ -1,4 +1,5 @@
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { getAccessToken } from "@/stores/auth";
 import type {
   SkillRunOut,
   SkillRunStartResponse,
@@ -7,8 +8,8 @@ import type {
 
 /**
  * Trigger the skill associated with a node (extract → viral_talking_points,
- * format → {platform}_creator). Returns the skill_run id; caller polls or
- * subscribes via SSE for completion.
+ * format → {platform}_creator). Returns the skill_run id; caller subscribes
+ * via `subscribeSkillRun` for completion.
  */
 export async function runNode(
   nodeId: string,
@@ -28,24 +29,208 @@ export interface SkillRunHandlers {
   onError?: (message: string) => void;
 }
 
-const DEFAULT_POLL_INTERVAL_MS = 1500;
-
 /**
- * Subscribe to a skill-run's status until it terminates (`completed` | `failed`).
+ * Subscribe to a skill-run's status until it terminates.
  *
- * NOTE on SSE vs polling:
- * The contract documents `GET /api/v1/skill-runs/{id}/stream` (SSE), but the
- * EventSource API in browsers cannot send custom headers — meaning the
- * `Authorization: Bearer <jwt>` we use everywhere else can't be attached.
- * Switching to a `?token=...` query param would require a backend change, and
- * the backend is locked for this iteration. Polling `GET /api/v1/skill-runs/{id}`
- * works with the existing contract and is more than fast enough for a typical
- * 5–30s skill run. We wrap it in this subscribe-style API so a swap to SSE
- * later is a one-line change.
+ * Iter C swap: this used to poll `GET /skill-runs/{id}` every 1.5s. The
+ * backend now exposes `GET /skill-runs/{id}/stream?token=<jwt>` (SSE), so we
+ * open an EventSource and listen for `status`, `progress`, `complete`, and
+ * `error` events. The transport is a faster status channel — completion
+ * still triggers a canvas refetch in the consumer (CanvasEditor), nothing
+ * else changes from the caller's perspective.
+ *
+ * Fallback path: if the auth store has no access token yet (offline / pre-
+ * rehydrate window) we drop back to polling so the run still completes.
+ *
+ * Error model: native EventSource fires `onerror` for transient retries too.
+ * We only treat `readyState === CLOSED` as a fatal transport error, and
+ * resolve it with a single GET to learn the final state — no auto-reconnect.
  *
  * Returns an unsubscribe function. Always call it on unmount.
  */
 export function subscribeSkillRun(
+  skillRunId: string,
+  handlers: SkillRunHandlers,
+  options?: { intervalMs?: number },
+): () => void {
+  const token = getAccessToken();
+  if (!token) {
+    return subscribeViaPolling(skillRunId, handlers, options);
+  }
+  return subscribeViaSse(skillRunId, token, handlers);
+}
+
+// ----- SSE path ---------------------------------------------------------
+
+type StatusPayload = { status: SkillRunStatus };
+type CompletePayload = {
+  node_id?: string;
+  node_data?: Record<string, unknown>;
+  node_status?: string;
+  duration_ms?: number;
+  meta?: Record<string, unknown>;
+};
+type ErrorPayload = { message?: string };
+
+function parseJson<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function subscribeViaSse(
+  skillRunId: string,
+  token: string,
+  handlers: SkillRunHandlers,
+): () => void {
+  const url = `${API_BASE_URL}/api/v1/skill-runs/${skillRunId}/stream?token=${encodeURIComponent(
+    token,
+  )}`;
+  const es = new EventSource(url);
+
+  let closed = false;
+  let terminated = false;
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    es.close();
+  };
+
+  const finish = (fn: () => void) => {
+    if (terminated) return;
+    terminated = true;
+    fn();
+    close();
+  };
+
+  es.addEventListener("status", (ev: MessageEvent) => {
+    const payload = parseJson<StatusPayload>(ev.data);
+    if (!payload) return;
+    handlers.onStatus?.(payload.status);
+    // The contract says the stream replays terminal status if the run is
+    // already finished. Treat `completed`/`failed` here as a terminal signal
+    // and resolve via a final GET so the consumer always sees the canonical
+    // shape — keeps behavior identical to the polling implementation.
+    if (payload.status === "completed") {
+      void getSkillRun(skillRunId)
+        .then((run) => {
+          finish(() => handlers.onComplete?.(run));
+        })
+        .catch((err: unknown) => {
+          finish(() =>
+            handlers.onError?.(
+              err instanceof Error
+                ? err.message
+                : "Run completed but final fetch failed",
+            ),
+          );
+        });
+    } else if (payload.status === "failed") {
+      void getSkillRun(skillRunId)
+        .then((run) => {
+          finish(() =>
+            handlers.onError?.(run.error ?? "Skill run failed"),
+          );
+        })
+        .catch((err: unknown) => {
+          finish(() =>
+            handlers.onError?.(
+              err instanceof Error ? err.message : "Skill run failed",
+            ),
+          );
+        });
+    }
+  });
+
+  es.addEventListener("progress", () => {
+    // Opaque progress — bump the running indicator. Consumer doesn't need
+    // the step name today, but firing onStatus("running") is harmless and
+    // keeps the indicator alive while long runs unfold.
+    handlers.onStatus?.("running");
+  });
+
+  es.addEventListener("complete", (ev: MessageEvent) => {
+    // We could short-circuit with the inline node_data, but the canvas
+    // consumer always refetches on completion (safer source of truth), so
+    // we mirror the polling contract: hand back a SkillRunOut. A quick
+    // GET keeps the shape identical and is O(ms) on a hot run.
+    void parseJson<CompletePayload>(ev.data); // intentional: drained for parity
+    void getSkillRun(skillRunId)
+      .then((run) => {
+        finish(() => handlers.onComplete?.(run));
+      })
+      .catch((err: unknown) => {
+        finish(() =>
+          handlers.onError?.(
+            err instanceof Error
+              ? err.message
+              : "Run completed but final fetch failed",
+          ),
+        );
+      });
+  });
+
+  // Single `error` listener that handles both:
+  //   1. Server-emitted application errors (`event: error\ndata: {...}`).
+  //   2. Native transport errors (browser fires Event with empty data).
+  // Native errors fire for transient retries too — only treat CLOSED as
+  // fatal and use a final GET to resolve the run state.
+  es.addEventListener("error", (ev: Event) => {
+    if (terminated) return;
+    const data = (ev as MessageEvent).data;
+    if (typeof data === "string" && data.length > 0) {
+      const payload = parseJson<ErrorPayload>(data);
+      finish(() =>
+        handlers.onError?.(payload?.message ?? "Skill run failed"),
+      );
+      return;
+    }
+    if (es.readyState === EventSource.CLOSED) {
+      void getSkillRun(skillRunId)
+        .then((run) => {
+          if (run.status === "completed") {
+            finish(() => handlers.onComplete?.(run));
+          } else if (run.status === "failed") {
+            finish(() =>
+              handlers.onError?.(run.error ?? "Skill run failed"),
+            );
+          } else {
+            // Stream dropped mid-flight and the run isn't terminal yet.
+            // Surface as an error rather than hanging silently.
+            finish(() =>
+              handlers.onError?.(
+                "Lost connection to skill-run stream before completion",
+              ),
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          finish(() =>
+            handlers.onError?.(
+              err instanceof Error
+                ? err.message
+                : "Could not fetch skill-run status",
+            ),
+          );
+        });
+    }
+    // CONNECTING means the browser is auto-retrying — let it.
+  });
+
+  return () => {
+    terminated = true;
+    close();
+  };
+}
+
+// ----- Polling fallback (pre-rehydrate / no token) ----------------------
+
+const DEFAULT_POLL_INTERVAL_MS = 1500;
+
+function subscribeViaPolling(
   skillRunId: string,
   handlers: SkillRunHandlers,
   options?: { intervalMs?: number },
@@ -72,7 +257,6 @@ export function subscribeSkillRun(
         handlers.onError?.(run.error ?? "Skill run failed");
         return;
       }
-      // pending / running — keep polling
       timer = setTimeout(tick, interval);
     } catch (err) {
       if (stopped) return;
@@ -82,7 +266,6 @@ export function subscribeSkillRun(
     }
   };
 
-  // Kick off immediately so UI feedback appears fast.
   void tick();
 
   return () => {

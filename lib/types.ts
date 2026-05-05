@@ -182,6 +182,12 @@ export interface BrandContextData {
   taboo_list?: string;
   manifesto?: string;
   cta_keywords?: string[];
+  // Set by `POST /voice-samples/extract-traits` (Iter B).
+  voice_traits?: string[];
+  voice_avoid?: string[];
+  recurring_phrases?: string[];
+  tone_calibration?: string;
+  voice_extracted_at?: string;
   [key: string]: unknown;
 }
 
@@ -254,4 +260,39 @@ export interface PublishLogOut {
 export interface PublishStarted {
   publish_log_id: UUID;
   status: PublishStatus;
+}
+
+// ----- Voice training -----
+
+export interface VoiceSampleOut {
+  id: UUID;
+  organization_id: UUID;
+  project_id: UUID | null;
+  platform: string | null;
+  text: string;
+  meta: Record<string, unknown>;
+  has_embedding: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VoiceSampleCreate {
+  text: string;
+  platform?: string | null;
+  project_id?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+export interface VoiceSampleBulkResult {
+  created: number;
+  skipped: number;
+  items: VoiceSampleOut[];
+}
+
+export interface VoiceTraitsExtracted {
+  voice_traits: string[];
+  voice_avoid: string[];
+  recurring_phrases: string[];
+  tone_calibration: string;
+  samples_analyzed: number;
 }

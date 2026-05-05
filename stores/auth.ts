@@ -59,3 +59,11 @@ export const useAuthStore = create<AuthStore>()(
 // Helper for non-React modules (the apiFetch client) to read the live token
 // without subscribing.
 export const getAuthSnapshot = () => useAuthStore.getState();
+
+/**
+ * Non-hook access-token getter for code paths that can't take a React
+ * dependency (e.g. opening an EventSource from a service module). Returns
+ * the current value at call-time — re-call if you need a fresh token.
+ */
+export const getAccessToken = (): string | null =>
+  useAuthStore.getState().accessToken;
