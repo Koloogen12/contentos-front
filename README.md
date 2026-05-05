@@ -41,6 +41,47 @@ CORS on the backend already allows `http://localhost:3000` and
 `http://localhost:5173`. Stay on port 3000 in dev unless you also add the new
 origin to `CORS_ORIGINS` in the backend `.env`.
 
+## What's implemented in Iter 2 (current)
+
+- **Canvas editor** (`/canvas/[id]`)
+  - React Flow v12 (`@xyflow/react`) with dark dot-grid background, MiniMap,
+    and Controls.
+  - Three custom node types in `components/canvas/nodes/`:
+    `SourceNode` (textarea bound to `data.content`, autosaves on blur),
+    `ExtractNode` (Run button + viral_score-tagged talking points,
+    selectable via `selected_index`), `FormatNode` (platform picker,
+    radio-style hook selection, body, CTA, copy-to-clipboard).
+  - Status border colors: idle / running (indigo pulse) / done (emerald) /
+    error (red). Each node has a compact / expanded toggle.
+  - Floating top toolbar: + Source / + Extract / + Format buttons that
+    `POST /canvases/{id}/nodes` at the current viewport center, plus a
+    "Templates" stub dialog.
+  - Edge validation: only `source→extract`, `extract→format`,
+    `source→format` allowed. Optimistic add → on 422 the edge reverts and a
+    toast appears.
+  - Position autosave: `onNodeDragStop` PATCHes `position_x` / `position_y`
+    debounced 300ms per node.
+  - Backspace on a selected node opens a confirm dialog → DELETE.
+    Selected-edge delete is immediate.
+- **Skill runs** (`lib/skill-runs.ts`)
+  - `runNode(nodeId)` → `POST /nodes/{id}/run`.
+  - `subscribeSkillRun(id, handlers)` polls `GET /skill-runs/{id}` every 1.5s
+    until `completed` or `failed`. SSE is documented in the contract but
+    EventSource cannot send `Authorization` headers — see comment in that
+    file. On `completed`, the canvas is refetched and React Flow re-renders
+    from the fresh `data` payload.
+- **Knowledge sidebar** (`components/canvas/KnowledgeSidebar.tsx`)
+  - Right rail of the canvas. Lists a node's attached items, provides
+    search + type-filter to attach more, and a "+ New" modal that POSTs to
+    `/api/v1/knowledge`. With no node selected, shows the org library
+    (read-only browse).
+- **Knowledge page** (`/knowledge`) — full CRUD list with search + type
+  filter, create / edit / delete dialogs.
+- **Settings page** (`/settings`) — Brand Context editor backed by
+  `GET/PUT /api/v1/brand-context` (author name/handle, voice rules, taboos,
+  manifesto, CTA keywords).
+- **Toasts** via `sonner` mounted in `Providers.tsx` (`<Toaster />`).
+
 ## What's implemented in Iter 1
 
 - **Auth flow**
@@ -61,17 +102,14 @@ origin to `CORS_ORIGINS` in the backend `.env`.
     confirmation dialog.
 
 - **Canvas detail** (`/canvas/[id]`)
-  - Placeholder. Fetches `GET /api/v1/canvases/{id}` and renders the
-    `nodes` / `edges` payload as JSON in `<pre>` blocks.
-  - Top bar with inline-editable canvas title (commits via `PATCH`) and a
-    "Back to dashboard" link.
-  - **Iter 2 will replace the placeholder with a React Flow canvas editor.**
+  - Inline-editable canvas title (commits via `PATCH`) and a
+    "Back to dashboard" link in the top bar. Iter 2 replaces the placeholder
+    body with the React Flow editor.
 
 - **Layout chrome** (`components/AppShell.tsx`)
-  - Left sidebar: logo, Dashboard, Knowledge (placeholder), Settings
-    (placeholder).
+  - Left sidebar: logo, Dashboard, Knowledge, Settings.
   - Top bar: org name + user menu with logout.
-  - Used on `/dashboard` and `/canvas/[id]`. `/login` and `/register` are bare.
+  - Used on every `(app)` route. `/login` and `/register` are bare.
 
 - **Theme & polish**
   - Dark by default via `next-themes` (`class="dark"` on `<html>`).
@@ -89,6 +127,8 @@ frontend/
 │   ├── (app)/              # routes that mount AppShell + AuthGuard
 │   │   ├── canvas/[id]/page.tsx
 │   │   ├── dashboard/page.tsx
+│   │   ├── knowledge/page.tsx
+│   │   ├── settings/page.tsx
 │   │   ├── error.tsx
 │   │   └── layout.tsx
 │   ├── login/page.tsx
@@ -100,6 +140,16 @@ frontend/
 │   └── page.tsx            # redirects to /dashboard
 ├── components/
 │   ├── ui/                 # shadcn-style primitives (Button, Dialog, …)
+│   ├── canvas/
+│   │   ├── nodes/
+│   │   │   ├── NodeShell.tsx
+│   │   │   ├── SourceNode.tsx
+│   │   │   ├── ExtractNode.tsx
+│   │   │   └── FormatNode.tsx
+│   │   ├── canvasContext.ts
+│   │   ├── CanvasEditor.tsx
+│   │   ├── CanvasToolbar.tsx
+│   │   └── KnowledgeSidebar.tsx
 │   ├── AppShell.tsx
 │   ├── AppErrorBoundary.tsx
 │   ├── AuthBootstrap.tsx
@@ -112,7 +162,12 @@ frontend/
 │   └── RenameCanvasDialog.tsx
 ├── lib/
 │   ├── api.ts              # apiFetch + auth helpers (refresh-on-401)
+│   ├── brand-context.ts    # GET/PUT /api/v1/brand-context
 │   ├── canvases.ts         # canvas CRUD wrappers
+│   ├── edges.ts            # edge create/delete
+│   ├── knowledge.ts        # knowledge CRUD + node attach/detach
+│   ├── nodes.ts            # node create/update/delete
+│   ├── skill-runs.ts       # runNode + polling-based subscribe
 │   ├── types.ts            # API DTOs mirroring CONTRACTS.md
 │   └── utils.ts
 ├── stores/
@@ -125,18 +180,25 @@ frontend/
 └── .env.example
 ```
 
-## Deferred to Iter 2
+## Deferred to Iter 3+
 
-- The canvas editor itself (React Flow / `@xyflow/react`): rendering source /
-  extract / format nodes, edges, the floating toolbar, the node picker, and
-  drag-to-connect handles. Design tokens for it already live in
-  `../content-os/DESIGN-SPEC.md`.
-- Skill-run wiring (`POST /nodes/{id}/run`, SSE stream on
-  `/api/v1/skill-runs/{id}/stream`).
-- Knowledge layer UI (`/knowledge` is a sidebar placeholder for now).
-- Settings UI (`/settings` is a sidebar placeholder).
-- Publishing (Telegram targets) and templates.
-- Autosave / debounced PATCHing of node payloads.
+- Real-time skill-run updates via SSE — currently we poll
+  `GET /skill-runs/{id}` every 1.5s. EventSource cannot send the JWT
+  `Authorization` header, so SSE needs either a `?token=` query param or a
+  cookie-based auth path on the backend (locked for now).
+- Transcription UI: YouTube URL → `POST /nodes/{id}/transcribe-youtube`,
+  audio upload → `POST /nodes/{id}/upload-audio`, with progress UI. The
+  Source node currently only supports the plain-text path.
+- Publishing (Telegram targets, `POST /nodes/{id}/publish` and the
+  `publish_logs` polling).
+- Voice training onboarding (the multi-step author voice profile wizard).
+- Templates: the toolbar button opens a "Coming soon" dialog. Backend has
+  `POST /canvases/{id}/save-as-template` and
+  `POST /canvases/from-template/{id}` — not wired here.
+- Project sidebar / multi-project switcher. Knowledge currently lists at
+  the org level only.
+- Visual generation node (V2 in PRD).
+- Mobile / touch optimization for the canvas (desktop-only by design).
 
 ## Notes & decisions
 
@@ -151,3 +213,10 @@ frontend/
   yet.
 - Token refresh is concurrency-safe: simultaneous 401s share a single in-flight
   refresh promise.
+- **SSE vs polling for skill runs.** The backend exposes
+  `GET /skill-runs/{id}/stream`, but the browser EventSource API can't send
+  the `Authorization: Bearer …` header that the rest of the app uses. The
+  workaround would be a `?token=…` query param, which requires a backend
+  change. Instead, `subscribeSkillRun` polls `GET /skill-runs/{id}` every
+  1.5s and refetches the parent canvas on completion. The API surface is
+  shaped like a subscription so swapping to real SSE later is one file.

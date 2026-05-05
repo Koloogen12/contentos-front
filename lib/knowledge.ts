@@ -1,0 +1,89 @@
+import { apiFetch } from "@/lib/api";
+import type { KnowledgeItemOut, KnowledgeType } from "@/lib/types";
+
+export interface ListKnowledgeParams {
+  type?: KnowledgeType;
+  project_id?: string | null;
+  is_dormant?: boolean;
+}
+
+export async function listKnowledge(
+  params: ListKnowledgeParams = {},
+): Promise<KnowledgeItemOut[]> {
+  const search = new URLSearchParams();
+  if (params.type) search.set("type", params.type);
+  if (params.project_id) search.set("project_id", params.project_id);
+  if (params.is_dormant !== undefined)
+    search.set("is_dormant", String(params.is_dormant));
+  const qs = search.toString();
+  return apiFetch<KnowledgeItemOut[]>(
+    `/api/v1/knowledge${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export interface CreateKnowledgeInput {
+  type: KnowledgeType;
+  title: string;
+  body: string;
+  tags?: string[];
+  project_id?: string | null;
+  viral_score?: number | null;
+  source_file?: string | null;
+}
+
+export async function createKnowledge(
+  input: CreateKnowledgeInput,
+): Promise<KnowledgeItemOut> {
+  return apiFetch<KnowledgeItemOut>("/api/v1/knowledge", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export interface UpdateKnowledgeInput {
+  title?: string;
+  body?: string;
+  tags?: string[];
+  type?: KnowledgeType;
+  project_id?: string | null;
+  viral_score?: number | null;
+  is_dormant?: boolean;
+}
+
+export async function updateKnowledge(
+  id: string,
+  input: UpdateKnowledgeInput,
+): Promise<KnowledgeItemOut> {
+  return apiFetch<KnowledgeItemOut>(`/api/v1/knowledge/${id}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export async function deleteKnowledge(id: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/knowledge/${id}`, { method: "DELETE" });
+}
+
+export async function listNodeKnowledge(
+  nodeId: string,
+): Promise<KnowledgeItemOut[]> {
+  return apiFetch<KnowledgeItemOut[]>(`/api/v1/nodes/${nodeId}/knowledge`);
+}
+
+export async function attachKnowledgeToNode(
+  nodeId: string,
+  itemId: string,
+): Promise<void> {
+  await apiFetch<void>(`/api/v1/nodes/${nodeId}/knowledge/${itemId}`, {
+    method: "POST",
+  });
+}
+
+export async function detachKnowledgeFromNode(
+  nodeId: string,
+  itemId: string,
+): Promise<void> {
+  await apiFetch<void>(`/api/v1/nodes/${nodeId}/knowledge/${itemId}`, {
+    method: "DELETE",
+  });
+}

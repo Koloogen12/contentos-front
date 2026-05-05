@@ -32,8 +32,8 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutGrid },
-  { label: "Knowledge", href: "/knowledge", icon: BookOpen, disabled: true },
-  { label: "Settings", href: "/settings", icon: Settings, disabled: true },
+  { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -80,7 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="border-t border-border p-3 text-xs text-muted-foreground">
-          <p className="px-2">Iter 1 · Pre-canvas</p>
+          <p className="px-2">Iter 2 · Canvas</p>
         </div>
       </aside>
 

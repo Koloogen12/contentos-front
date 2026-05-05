@@ -67,3 +67,128 @@ export interface CanvasDetail extends CanvasOut {
   nodes: NodeOut[];
   edges: EdgeOut[];
 }
+
+// ----- Node data shapes (per CONTRACTS.md §0/3) -----
+
+export type SourceInputType = "text" | "url" | "youtube" | "file_upload";
+
+export interface SourceNodeData {
+  input_type?: SourceInputType;
+  content?: string;
+  url?: string | null;
+  youtube_url?: string | null;
+  youtube_video_id?: string | null;
+  youtube_title?: string | null;
+  youtube_duration_seconds?: number | null;
+  file_name?: string | null;
+  file_size_bytes?: number | null;
+  file_type?: string | null;
+  transcript_method?: "youtube_captions" | "whisper" | null;
+  transcript_language?: string | null;
+  platform?: string | null;
+  author?: string | null;
+  notes?: string | null;
+}
+
+export interface TalkingPointScoreBreakdown {
+  audience_fit: number;
+  engagement_trigger: number;
+  uniqueness: number;
+  author_fit: number;
+}
+
+export interface TalkingPoint {
+  text: string;
+  score_breakdown: TalkingPointScoreBreakdown;
+  viral_score: number;
+  category: string;
+  reasoning: string;
+}
+
+export interface ExtractNodeData {
+  talking_points?: TalkingPoint[];
+  selected_index?: number | null;
+}
+
+export type FormatPlatform =
+  | "telegram"
+  | "instagram"
+  | "linkedin"
+  | "twitter"
+  | "article";
+
+export interface FormatNodeData {
+  platform?: FormatPlatform;
+  talking_point_text?: string;
+  hooks?: string[];
+  selected_hook_index?: number;
+  body?: string;
+  cta?: string;
+  full_text?: string;
+}
+
+// ----- Skill runs -----
+
+export type SkillRunStatus = "pending" | "running" | "completed" | "failed";
+
+export interface SkillRunOut {
+  id: UUID;
+  node_id: UUID;
+  skill: string;
+  status: SkillRunStatus;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface SkillRunStartResponse {
+  skill_run_id: UUID;
+  status: SkillRunStatus;
+}
+
+// ----- Knowledge -----
+
+export type KnowledgeType =
+  | "tezis"
+  | "reference"
+  | "audience"
+  | "voice_rule"
+  | "content_theme";
+
+export interface KnowledgeItemOut {
+  id: UUID;
+  project_id: UUID | null;
+  type: KnowledgeType;
+  title: string;
+  body: string;
+  tags: string[];
+  viral_score: number | null;
+  source_file: string | null;
+  is_dormant: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ----- Brand context -----
+
+export interface BrandContextData {
+  author_name?: string;
+  author_handle?: string;
+  author_bio?: string;
+  active_products?: string;
+  voice_rules?: string;
+  taboo_list?: string;
+  manifesto?: string;
+  cta_keywords?: string[];
+  [key: string]: unknown;
+}
+
+export interface BrandContextOut {
+  id: UUID;
+  data: BrandContextData;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}

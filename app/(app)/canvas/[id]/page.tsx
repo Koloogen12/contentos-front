@@ -18,7 +18,7 @@ import { formatRelativeDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/EmptyState";
+import { CanvasEditor } from "@/components/canvas/CanvasEditor";
 
 export default function CanvasDetailPage() {
   const params = useParams<{ id: string }>();
@@ -31,43 +31,36 @@ export default function CanvasDetailPage() {
   });
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
-      <div className="border-b border-border bg-card/30 px-6 py-3">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" /> Back to dashboard
-          </Link>
-          <CanvasTitle
-            canvas={query.data ?? null}
-            isPending={query.isPending}
-          />
-          <div className="hidden text-xs text-muted-foreground sm:block">
-            {query.data
-              ? `Updated ${formatRelativeDate(query.data.updated_at)}`
-              : null}
-          </div>
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-card/30 px-6 py-3">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" /> Back to dashboard
+        </Link>
+        <CanvasTitle canvas={query.data ?? null} isPending={query.isPending} />
+        <div className="hidden text-xs text-muted-foreground sm:block">
+          {query.data
+            ? `Updated ${formatRelativeDate(query.data.updated_at)}`
+            : null}
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
-        {query.isPending ? (
-          <CanvasSkeleton />
-        ) : query.isError ? (
-          <CanvasError
-            detail={
-              query.error instanceof ApiError
-                ? query.error.detail
-                : "Could not load canvas."
-            }
-            onRetry={() => query.refetch()}
-          />
-        ) : query.data ? (
-          <CanvasPreview canvas={query.data} />
-        ) : null}
-      </div>
+      {query.isPending ? (
+        <CanvasSkeleton />
+      ) : query.isError ? (
+        <CanvasError
+          detail={
+            query.error instanceof ApiError
+              ? query.error.detail
+              : "Could not load canvas."
+          }
+          onRetry={() => query.refetch()}
+        />
+      ) : query.data ? (
+        <CanvasEditor canvas={query.data} />
+      ) : null}
     </div>
   );
 }
@@ -166,103 +159,17 @@ function CanvasTitle({
   );
 }
 
-function CanvasPreview({ canvas }: { canvas: CanvasDetail }) {
-  return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200/90">
-        <strong className="font-semibold">Iter 1 placeholder.</strong> The
-        node-based editor lands in Iter 2 — for now, this page just shows the
-        raw nodes/edges payload returned by the API.
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Nodes" value={canvas.nodes.length} />
-        <Stat label="Edges" value={canvas.edges.length} />
-        <Stat
-          label="Created"
-          value={formatRelativeDate(canvas.created_at)}
-          isText
-        />
-      </div>
-
-      {canvas.description && (
-        <p className="rounded-xl border border-border bg-card p-4 text-sm text-foreground/80">
-          {canvas.description}
-        </p>
-      )}
-
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Nodes
-        </h2>
-        {canvas.nodes.length === 0 ? (
-          <EmptyState
-            title="No nodes yet"
-            description="The canvas editor in Iter 2 will let you drag in source, extract, and format nodes."
-          />
-        ) : (
-          <pre className="scrollbar-thin overflow-auto rounded-xl border border-border bg-card p-4 text-xs leading-relaxed text-foreground/85">
-            {JSON.stringify(canvas.nodes, null, 2)}
-          </pre>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Edges
-        </h2>
-        {canvas.edges.length === 0 ? (
-          <EmptyState
-            title="No edges yet"
-            description="Connections between nodes will be visualized as edges in the canvas editor."
-          />
-        ) : (
-          <pre className="scrollbar-thin overflow-auto rounded-xl border border-border bg-card p-4 text-xs leading-relaxed text-foreground/85">
-            {JSON.stringify(canvas.edges, null, 2)}
-          </pre>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  isText,
-}: {
-  label: string;
-  value: number | string;
-  isText?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div
-        className={
-          isText
-            ? "mt-1 text-sm font-medium text-foreground"
-            : "mt-1 text-2xl font-semibold tabular-nums text-foreground"
-        }
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function CanvasSkeleton() {
   return (
-    <div className="space-y-4">
-      <Skeleton className="h-10 w-full" />
-      <div className="grid grid-cols-3 gap-4">
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
+    <div className="flex flex-1 items-center justify-center">
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-72" />
+        <div className="grid grid-cols-3 gap-4">
+          <Skeleton className="h-20 w-48" />
+          <Skeleton className="h-20 w-48" />
+          <Skeleton className="h-20 w-48" />
+        </div>
       </div>
-      <Skeleton className="h-48 w-full" />
     </div>
   );
 }
@@ -275,7 +182,7 @@ function CanvasError({
   onRetry: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8">
+    <div className="mx-auto mt-12 w-full max-w-xl rounded-2xl border border-destructive/30 bg-destructive/5 p-8">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/15 text-destructive">
           <AlertTriangle className="h-5 w-5" />
