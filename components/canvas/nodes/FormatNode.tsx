@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Check, Copy, Loader2, Play } from "lucide-react";
+import { Check, Copy, Loader2, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 import type { FormatNodeData, FormatPlatform, NodeOut } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { cn } from "@/lib/utils";
 import { NODE_HANDLE_STYLE, NodeShell } from "./NodeShell";
+import { PublishDialog } from "@/components/canvas/PublishDialog";
 
 interface FormatNodeRfData {
   node: NodeOut;
@@ -31,6 +32,8 @@ export function FormatNode({ data, selected }: NodeProps) {
   const hooks = format.hooks ?? [];
   const selectedHook = format.selected_hook_index ?? 0;
   const [copied, setCopied] = React.useState(false);
+  const [publishOpen, setPublishOpen] = React.useState(false);
+  const canPublish = !!format.full_text && platform === "telegram";
 
   const onPlatformChange = async (next: FormatPlatform) => {
     if (next === platform) return;
@@ -182,26 +185,48 @@ export function FormatNode({ data, selected }: NodeProps) {
                 </div>
               )}
 
-              <button
-                type="button"
-                className="nodrag inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onCopy();
-                }}
-                disabled={!format.full_text}
-              >
-                {copied ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onCopy();
+                  }}
+                  disabled={!format.full_text}
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                {canPublish && (
+                  <button
+                    type="button"
+                    className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPublishOpen(true);
+                    }}
+                  >
+                    <Send className="h-3 w-3" />
+                    Publish to Telegram
+                  </button>
                 )}
-                {copied ? "Copied" : "Copy full text"}
-              </button>
+              </div>
             </>
           )}
         </div>
       </NodeShell>
+      {canPublish && (
+        <PublishDialog
+          nodeId={node.id}
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+        />
+      )}
     </>
   );
 }

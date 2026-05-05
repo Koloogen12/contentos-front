@@ -498,6 +498,59 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     };
   }, []);
 
+  /**
+   * Wire a skill-run id (whether from a /run or a transcription endpoint) into
+   * the canvas's polling lifecycle: tracks running state, refetches on
+   * complete, surfaces failures via toast.
+   */
+  const attachSubscription = React.useCallback(
+    (nodeId: string, skillRunId: string, successMessage: string) => {
+      // Already wired?
+      if (subscriptionsRef.current.has(nodeId)) return;
+      setLocalStatus(nodeId, "running");
+      setRunningRuns((prev) => ({ ...prev, [nodeId]: skillRunId }));
+
+      const unsub = subscribeSkillRun(skillRunId, {
+        onComplete: async () => {
+          try {
+            const fresh = await getCanvas(canvasId);
+            qc.setQueryData<CanvasDetail | undefined>(
+              ["canvas", canvasId],
+              fresh,
+            );
+            toast.success(successMessage);
+          } catch (err) {
+            toast.error(
+              err instanceof ApiError
+                ? err.detail
+                : "Run completed but refresh failed",
+            );
+          } finally {
+            subscriptionsRef.current.delete(nodeId);
+            setRunningRuns((prev) => {
+              const next = { ...prev };
+              delete next[nodeId];
+              return next;
+            });
+          }
+        },
+        onError: (msg) => {
+          setLocalStatus(nodeId, "error");
+          subscriptionsRef.current.delete(nodeId);
+          setRunningRuns((prev) => {
+            const next = { ...prev };
+            delete next[nodeId];
+            return next;
+          });
+          toast.error(msg);
+        },
+      });
+
+      subscriptionsRef.current.set(nodeId, unsub);
+    },
+    [canvasId, qc, setLocalStatus],
+  );
+
   const startRun = React.useCallback(
     async (nodeId: string) => {
       const snap = getNodeSnapshot(nodeId);
@@ -506,51 +559,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         toast.error("Source nodes don't run skills");
         return;
       }
-      // Already in flight?
       if (subscriptionsRef.current.has(nodeId)) return;
 
       try {
         setLocalStatus(nodeId, "running");
         const { skill_run_id } = await runNodeApi(nodeId);
-        setRunningRuns((prev) => ({ ...prev, [nodeId]: skill_run_id }));
-
-        const unsub = subscribeSkillRun(skill_run_id, {
-          onComplete: async () => {
-            try {
-              const fresh = await getCanvas(canvasId);
-              qc.setQueryData<CanvasDetail | undefined>(
-                ["canvas", canvasId],
-                fresh,
-              );
-              toast.success("Skill run completed");
-            } catch (err) {
-              toast.error(
-                err instanceof ApiError
-                  ? err.detail
-                  : "Run completed but refresh failed",
-              );
-            } finally {
-              subscriptionsRef.current.delete(nodeId);
-              setRunningRuns((prev) => {
-                const next = { ...prev };
-                delete next[nodeId];
-                return next;
-              });
-            }
-          },
-          onError: (msg) => {
-            setLocalStatus(nodeId, "error");
-            subscriptionsRef.current.delete(nodeId);
-            setRunningRuns((prev) => {
-              const next = { ...prev };
-              delete next[nodeId];
-              return next;
-            });
-            toast.error(msg);
-          },
-        });
-
-        subscriptionsRef.current.set(nodeId, unsub);
+        attachSubscription(nodeId, skill_run_id, "Skill run completed");
       } catch (err) {
         setLocalStatus(nodeId, "error");
         toast.error(
@@ -558,7 +572,14 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         );
       }
     },
-    [canvasId, getNodeSnapshot, qc, setLocalStatus],
+    [attachSubscription, getNodeSnapshot, setLocalStatus],
+  );
+
+  const attachSkillRun = React.useCallback(
+    (nodeId: string, skillRunId: string) => {
+      attachSubscription(nodeId, skillRunId, "Transcription complete");
+    },
+    [attachSubscription],
   );
 
   const isRunning = React.useCallback(
@@ -580,11 +601,19 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       runNode: (id: string) => {
         void startRun(id);
       },
+      attachSkillRun,
       setRunningStatus: setLocalStatus,
       getNode: getNodeSnapshot,
       isRunning,
     }),
-    [updateNodeData, startRun, setLocalStatus, getNodeSnapshot, isRunning],
+    [
+      updateNodeData,
+      startRun,
+      attachSkillRun,
+      setLocalStatus,
+      getNodeSnapshot,
+      isRunning,
+    ],
   );
 
   return (

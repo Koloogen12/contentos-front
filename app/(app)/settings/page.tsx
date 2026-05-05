@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
 
 const schema = z.object({
   author_name: z.string().optional(),
@@ -34,31 +35,39 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-10">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Brand context</h1>
-        <p className="text-sm text-muted-foreground">
-          The voice, taboos, and manifesto that get injected into every AI
-          prompt run from this org.
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-3xl space-y-12 px-6 py-10">
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Brand context
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The voice, taboos, and manifesto that get injected into every AI
+            prompt run from this org.
+          </p>
+        </div>
 
-      <div className="mt-8">
-        {query.isPending ? (
-          <SettingsSkeleton />
-        ) : query.isError ? (
-          <ErrorBlock
-            detail={
-              query.error instanceof ApiError
-                ? query.error.detail
-                : "Could not load brand context."
-            }
-            onRetry={() => query.refetch()}
-          />
-        ) : query.data ? (
-          <BrandContextForm context={query.data} />
-        ) : null}
-      </div>
+        <div>
+          {query.isPending ? (
+            <SettingsSkeleton />
+          ) : query.isError ? (
+            <ErrorBlock
+              detail={
+                query.error instanceof ApiError
+                  ? query.error.detail
+                  : "Could not load brand context."
+              }
+              onRetry={() => query.refetch()}
+            />
+          ) : query.data ? (
+            <BrandContextForm context={query.data} />
+          ) : null}
+        </div>
+      </section>
+
+      <div className="border-t border-border" />
+
+      <TelegramTargetsSection />
     </div>
   );
 }

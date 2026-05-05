@@ -20,6 +20,12 @@ export interface CanvasNodeContextValue {
   ) => Promise<void>;
   /** Trigger POST /nodes/{id}/run and start the polling loop. */
   runNode: (nodeId: string) => void;
+  /**
+   * Attach an externally-started skill-run (e.g. transcribe-youtube,
+   * upload-audio) to the canvas's subscription/refetch lifecycle. The node
+   * gets `running` status locally; on completion the canvas refetches.
+   */
+  attachSkillRun: (nodeId: string, skillRunId: string) => void;
   /** Set local-only status (used while a run is in flight). */
   setRunningStatus: (nodeId: string, status: NodeStatus) => void;
   /** Look up the live React-Flow-managed node snapshot. */

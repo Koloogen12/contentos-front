@@ -192,3 +192,66 @@ export interface BrandContextOut {
   created_at: string;
   updated_at: string;
 }
+
+// ----- Transcription -----
+
+export interface YoutubeMeta {
+  title: string | null;
+  duration_seconds: number | null;
+  channel: string | null;
+  video_id: string | null;
+}
+
+/**
+ * Mirrors `SkillRunStartResponse` shape (the backend reuses it for transcription
+ * and publishing async kickoffs). Aliased here so call sites read clearly.
+ */
+export interface SkillRunStarted {
+  skill_run_id: UUID;
+  status: SkillRunStatus;
+}
+
+// ----- Telegram targets / publishing -----
+
+export interface TelegramTargetOut {
+  id: UUID;
+  title: string;
+  chat_id: string;
+  /** Whether a custom bot token is configured for this target. */
+  has_bot_token?: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TelegramTargetCreate {
+  title: string;
+  chat_id: string;
+  bot_token?: string | null;
+  is_default?: boolean;
+}
+
+export interface TelegramTargetUpdate {
+  title?: string;
+  chat_id?: string;
+  bot_token?: string | null;
+  is_default?: boolean;
+}
+
+export type PublishStatus = "pending" | "sending" | "sent" | "failed";
+
+export interface PublishLogOut {
+  id: UUID;
+  node_id: UUID;
+  target_id: UUID;
+  status: PublishStatus;
+  error: string | null;
+  message_id: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface PublishStarted {
+  publish_log_id: UUID;
+  status: PublishStatus;
+}
