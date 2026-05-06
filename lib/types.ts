@@ -115,7 +115,8 @@ export type FormatPlatform =
   | "linkedin"
   | "carousel"
   | "reels"
-  | "hooks";
+  | "hooks"
+  | "article";
 
 export interface CarouselSlide {
   title: string;
@@ -144,6 +145,11 @@ export interface HookEntry {
   trigger: HookTrigger;
 }
 
+export interface ArticleSection {
+  heading: string;
+  body: string;
+}
+
 export interface FormatNodeData {
   platform?: FormatPlatform;
   talking_point_text?: string;
@@ -161,6 +167,15 @@ export interface FormatNodeData {
   duration_sec?: number;
   // Hooks-specific
   hooks_bank?: HookEntry[];
+  // Article-specific
+  title?: string;
+  slug?: string;
+  hook?: string;
+  intro?: string;
+  sections?: ArticleSection[];
+  conclusion?: string;
+  meta_description?: string;
+  word_count?: number;
 }
 
 // ----- Skill runs -----

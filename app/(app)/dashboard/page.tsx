@@ -390,6 +390,8 @@ function platformLabel(n: NodeOut): string | null {
         return "reels";
       case "hooks":
         return "хуки";
+      case "article":
+        return "статья";
       default:
         return platform.slice(0, 8);
     }

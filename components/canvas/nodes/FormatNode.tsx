@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   Loader2,
   Mic,
+  Newspaper,
   PenLine,
   Play,
   RefreshCcw,
@@ -36,6 +37,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { tweakNode, type FormatTweakMode } from "@/lib/tweaks";
 import type {
+  ArticleSection,
   CarouselSlide,
   FormatNodeData,
   FormatPlatform,
@@ -62,6 +64,7 @@ const PLATFORM_LIST: ReadonlyArray<{
   { k: "carousel", label: "Carousel", Icon: LayoutGrid },
   { k: "reels", label: "Reels", Icon: Film },
   { k: "hooks", label: "Hooks", Icon: Hash },
+  { k: "article", label: "Статья", Icon: Newspaper },
 ];
 
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
@@ -70,6 +73,7 @@ const PLATFORM_LABEL: Record<FormatPlatform, string> = {
   carousel: "Carousel",
   reels: "Reels",
   hooks: "Hooks",
+  article: "Статья",
 };
 
 export function FormatNode({ data, selected }: NodeProps) {
@@ -88,12 +92,21 @@ export function FormatNode({ data, selected }: NodeProps) {
   const selectedHook = format.selected_hook_index ?? 0;
   const [publishOpen, setPublishOpen] = React.useState(false);
 
+  const articleSections = format.sections ?? [];
   const hasOutput = React.useMemo(() => {
     if (platform === "carousel") return slides.length > 0;
     if (platform === "reels") return beats.length > 0 || hooks.length > 0;
     if (platform === "hooks") return hooksBank.length > 0;
+    if (platform === "article") return articleSections.length > 0;
     return hooks.length > 0;
-  }, [platform, slides.length, beats.length, hooks.length, hooksBank.length]);
+  }, [
+    platform,
+    slides.length,
+    beats.length,
+    hooks.length,
+    hooksBank.length,
+    articleSections.length,
+  ]);
 
   const tweakMutation = useMutation({
     mutationFn: ({ mode }: { mode: FormatTweakMode }) =>
@@ -254,6 +267,17 @@ export function FormatNode({ data, selected }: NodeProps) {
                 />
               ) : platform === "hooks" ? (
                 <HooksBankBody hooks={hooksBank} />
+              ) : platform === "article" ? (
+                <ArticleBody
+                  title={format.title ?? ""}
+                  hook={format.hook ?? ""}
+                  intro={format.intro ?? ""}
+                  sections={articleSections}
+                  conclusion={format.conclusion ?? ""}
+                  cta={format.cta ?? ""}
+                  meta={format.meta_description ?? ""}
+                  wordCount={format.word_count ?? 0}
+                />
               ) : (
                 <PostBody
                   hooks={hooks}
@@ -632,6 +656,84 @@ function ReelsBody({
         <div className="text-[11px] text-[color:var(--text-secondary)]">
           <span className="text-[color:var(--text-muted)]">CTA:</span> {cta}
         </div>
+      )}
+    </div>
+  );
+}
+
+function ArticleBody({
+  title,
+  hook,
+  intro,
+  sections,
+  conclusion,
+  cta,
+  meta,
+  wordCount,
+}: {
+  title: string;
+  hook: string;
+  intro: string;
+  sections: ArticleSection[];
+  conclusion: string;
+  cta: string;
+  meta: string;
+  wordCount: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2 text-zinc-200">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+          Статья
+        </span>
+        <span className="text-[10px] tabular-nums text-zinc-500">
+          {wordCount} слов
+        </span>
+      </div>
+      {title && (
+        <h3 className="text-[14px] font-semibold leading-snug text-zinc-50">
+          {title}
+        </h3>
+      )}
+      {hook && (
+        <p className="text-[11px] italic leading-snug text-zinc-300">{hook}</p>
+      )}
+      {intro && (
+        <p className="text-[11px] leading-relaxed text-zinc-300 line-clamp-3">
+          {intro}
+        </p>
+      )}
+      <div className="rounded-md border border-white/5 bg-black/30 p-2">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+          {sections.length} {sections.length === 1 ? "секция" : "секций"}
+        </div>
+        <ul className="flex flex-col gap-1">
+          {sections.map((s, i) => (
+            <li
+              key={i}
+              className="text-[11px] leading-snug text-zinc-300 line-clamp-1"
+            >
+              <span className="text-zinc-500 tabular-nums mr-1.5">{i + 1}.</span>
+              {s.heading}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {conclusion && (
+        <p className="text-[11px] leading-relaxed text-zinc-400 line-clamp-2">
+          {conclusion}
+        </p>
+      )}
+      {cta && (
+        <p className="rounded-md border border-indigo-400/20 bg-indigo-400/5 p-1.5 text-[11px] leading-snug text-indigo-200">
+          {cta}
+        </p>
+      )}
+      {meta && (
+        <p className="text-[10px] leading-snug text-zinc-500">
+          <span className="font-semibold text-zinc-400">SEO: </span>
+          {meta}
+        </p>
       )}
     </div>
   );
