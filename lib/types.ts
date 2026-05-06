@@ -434,3 +434,153 @@ export interface PublicCanvasOut {
   edges: EdgeOut[];
   created_at: string;
 }
+
+// ----- Content Plan -----
+
+export type PostPlatform =
+  | "telegram"
+  | "instagram"
+  | "linkedin"
+  | "twitter"
+  | "article"
+  | "carousel"
+  | "reels"
+  | "hooks";
+
+export type PostStatus =
+  | "draft"
+  | "ready"
+  | "scheduled"
+  | "published"
+  | "skipped";
+
+export type ContentPillar = "R1" | "R2" | "R3" | "R4";
+
+export interface PlannedPostOut {
+  id: UUID;
+  organization_id: UUID;
+  canvas_id: UUID | null;
+  node_id: UUID | null;
+  project_id: UUID | null;
+  platform: PostPlatform;
+  hook: string;
+  body: string;
+  cta: string;
+  full_text: string;
+  talking_point_text: string | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  status: PostStatus;
+  pillar: ContentPillar | null;
+  tags: string[];
+  notes: string | null;
+  published_at: string | null;
+  metrics: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlannedPostCreate {
+  platform: PostPlatform;
+  hook?: string;
+  body?: string;
+  cta?: string;
+  full_text?: string;
+  talking_point_text?: string | null;
+  scheduled_date?: string | null;
+  scheduled_time?: string | null;
+  status?: PostStatus;
+  pillar?: ContentPillar | null;
+  tags?: string[];
+  notes?: string | null;
+  canvas_id?: string | null;
+  node_id?: string | null;
+  project_id?: string | null;
+}
+
+export interface PlannedPostUpdate {
+  platform?: PostPlatform;
+  hook?: string;
+  body?: string;
+  cta?: string;
+  full_text?: string;
+  talking_point_text?: string | null;
+  scheduled_date?: string | null;
+  scheduled_time?: string | null;
+  status?: PostStatus;
+  pillar?: ContentPillar | null;
+  tags?: string[];
+  notes?: string | null;
+  metrics?: Record<string, unknown>;
+}
+
+export interface WeekDay {
+  date: string;
+  day_name: string;
+  posts: PlannedPostOut[];
+  is_empty: boolean;
+}
+
+export interface WeekStats {
+  total_scheduled: number;
+  total_ready: number;
+  empty_days: number;
+  platforms: Record<string, number>;
+  pillars: Record<string, number>;
+}
+
+export interface WeekResponse {
+  week_start: string;
+  week_end: string;
+  days: WeekDay[];
+  stats: WeekStats;
+}
+
+export interface TopPost {
+  id: UUID;
+  platform: PostPlatform;
+  hook: string;
+  full_text: string;
+  pillar: ContentPillar | null;
+  published_at: string | null;
+  metrics: Record<string, unknown>;
+}
+
+export interface StatsResponse {
+  publishing_streak: number;
+  total_published: number;
+  this_week_published: number;
+  this_month_published: number;
+  content_mix: Record<string, number>;
+  platform_mix: Record<string, number>;
+  top_posts: TopPost[];
+}
+
+export type WhatToWriteRecommendationType =
+  | "dormant_gem"
+  | "pillar_balance"
+  | "top_score";
+
+export interface WhatToWriteRecommendation {
+  type: WhatToWriteRecommendationType;
+  title: string;
+  knowledge_item_id: string | null;
+  knowledge_item_title: string | null;
+  knowledge_item_body: string | null;
+  pillar: ContentPillar | null;
+  viral_score: number | null;
+}
+
+export interface WhatToWriteResponse {
+  date: string;
+  priority_pillar: ContentPillar;
+  pillar_reason: string;
+  recommendations: WhatToWriteRecommendation[];
+}
+
+export interface ScheduleFromNodeRequest {
+  scheduled_date?: string | null;
+  scheduled_time?: string | null;
+  pillar?: ContentPillar | null;
+  tags?: string[];
+}

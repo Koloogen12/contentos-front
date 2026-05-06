@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpen,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
@@ -55,6 +56,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: t.shell.home, href: "/dashboard", icon: LayoutGrid },
   { label: t.shell.knowledge, href: "/knowledge", icon: BookOpen },
+  { label: t.plan.nav, href: "/plan", icon: CalendarDays },
   { label: t.shell.settings, href: "/settings", icon: Settings },
 ];
 

@@ -58,6 +58,14 @@ import {
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { PublishDialog } from "@/components/canvas/PublishDialog";
+import { SchedulePickerDialog } from "@/components/plan/SchedulePickerDialog";
+import {
+  setScheduledBadge,
+  useScheduledBadge,
+} from "@/components/plan/scheduledBadgeStore";
+import { CalendarPlus } from "lucide-react";
+import { formatDayShortRu, parseISODate } from "@/lib/content-plan";
+import type { PostPlatform } from "@/lib/types";
 
 interface FormatNodeRfData {
   node: NodeOut;
@@ -106,6 +114,8 @@ export function FormatNode({ data, selected }: NodeProps) {
   const hooksBank = format.hooks_bank ?? [];
   const selectedHook = format.selected_hook_index ?? 0;
   const [publishOpen, setPublishOpen] = React.useState(false);
+  const [scheduleOpen, setScheduleOpen] = React.useState(false);
+  const scheduledDate = useScheduledBadge(node.id);
 
   const articleSections = format.sections ?? [];
 
@@ -268,6 +278,21 @@ export function FormatNode({ data, selected }: NodeProps) {
             title={upstreamPoints[effectiveIdeaIdx]?.text ?? ""}
           >
             Тезис {effectiveIdeaIdx + 1}
+          </span>
+        )}
+
+        {/* Scheduled badge — set client-side after a successful POST to
+             /nodes/{id}/schedule. Persisted in localStorage. */}
+        {scheduledDate && (
+          <span
+            className="co-plan-node-badge"
+            style={{ position: "absolute", top: 30, right: 12, zIndex: 2 }}
+            title={`Запланировано на ${scheduledDate}`}
+          >
+            <CalendarPlus size={10} />
+            {t.plan.schedule.inPlanBadge(
+              formatDayShortRu(parseISODate(scheduledDate)),
+            )}
           </span>
         )}
 
@@ -600,6 +625,20 @@ export function FormatNode({ data, selected }: NodeProps) {
                   <Send size={13} /> {t.publish.title}
                 </button>
               )}
+
+              {!readOnly && format.full_text && (
+                <button
+                  type="button"
+                  className="co-btn co-btn-ghost nodrag w-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setScheduleOpen(true);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <CalendarPlus size={13} /> {t.plan.schedule.title}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -610,6 +649,25 @@ export function FormatNode({ data, selected }: NodeProps) {
           nodeId={node.id}
           open={publishOpen}
           onOpenChange={setPublishOpen}
+        />
+      )}
+
+      {!readOnly && format.full_text && (
+        <SchedulePickerDialog
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+          nodeId={node.id}
+          platform={platform as PostPlatform}
+          hook={
+            (Array.isArray(hooks) && hooks.length > 0
+              ? hooks[selectedHook] ?? hooks[0]
+              : format.hook) ?? null
+          }
+          onScheduled={(post) => {
+            if (post.scheduled_date) {
+              setScheduledBadge(node.id, post.scheduled_date);
+            }
+          }}
         />
       )}
     </div>

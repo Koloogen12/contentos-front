@@ -44,6 +44,7 @@ import { CreateCanvasDialog } from "@/components/CreateCanvasDialog";
 import { RenameCanvasDialog } from "@/components/RenameCanvasDialog";
 import { DeleteCanvasDialog } from "@/components/DeleteCanvasDialog";
 import { TemplatesPickerDialog } from "@/components/canvas/TemplatesPickerDialog";
+import { WhatToWriteWidget } from "@/components/plan/WhatToWriteWidget";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -147,6 +148,8 @@ export default function DashboardPage() {
             <Settings size={16} />
           </button>
         </div>
+
+        <WhatToWriteWidget />
 
         <div className="co-dash-section-title">{t.dash.sectionRecent}</div>
 

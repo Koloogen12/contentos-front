@@ -617,6 +617,148 @@ export const t = {
     error: "Ошибка",
   },
 
+  // ----- Content plan -----
+  plan: {
+    nav: "Контент-план",
+    title: "Контент-план",
+    addBtn: "Добавить",
+    today: "Сегодня",
+    showAll: "Показать все",
+    showOnlyUsed: "Скрыть пустые",
+    views: {
+      week: "Неделя",
+      month: "Месяц",
+      list: "Список",
+      analytics: "Аналитика",
+    },
+    stub: "В разработке. Скоро будет.",
+    empty: {
+      title: "Здесь будет твой контент-план",
+      desc: "Создай пост в канвасе → нажми «Запланировать» → он появится здесь.",
+      openCanvas: "Открыть канвас",
+      addManual: "Добавить вручную",
+    },
+    queue: {
+      title: "ОЧЕРЕДЬ",
+      addManual: "+ Добавить вручную",
+      empty: "В очереди пока пусто.",
+      noDate: "нет даты",
+      draft: "черновик",
+    },
+    insights: {
+      thisWeek: "ЭТА НЕДЕЛЯ",
+      nextWeek: "СЛЕДУЮЩАЯ НЕДЕЛЯ",
+      mix: "КОНТЕНТ-МИКС",
+      mix30days: "(последние 30 дней)",
+      platforms: "ПЛАТФОРМЫ",
+      streak: "STREAK",
+      streakDays: (n: number) => `${n} ${plural(n, "день", "дня", "дней")}`,
+      streakRecord: "Рекорд",
+      topPosts: "ЛУЧШИЕ ПОСТЫ",
+      topPostsSub: "(по метрикам)",
+      gapAlert: "Заполнить",
+      gapEmpty: "Нет контента",
+      mixHint: (pillar: string) => `↑ Мало ${pillar}`,
+      nextWeekWarning: (n: number) =>
+        `⚠ ${n} ${plural(n, "пост", "поста", "постов")}`,
+      postsCount: (n: number) => `${n} ${plural(n, "пост", "поста", "постов")}`,
+      platformsCount: (n: number) =>
+        `${n} ${plural(n, "платформа", "платформы", "платформ")}`,
+      views: (n: number) => `↗ ${formatThousands(n)} просм.`,
+      saves: (n: number) => `↗ ${formatThousands(n)} сохр.`,
+      noTopPosts: "Пока нет опубликованных.",
+      noStreak: "—",
+    },
+    statuses: {
+      draft: "Черновик",
+      ready: "Готов",
+      scheduled: "В плане",
+      published: "Опубликован",
+      skipped: "Пропущен",
+    },
+    pillars: {
+      R1: "Как строить продукт",
+      R2: "Психология фаундера",
+      R3: "Путь к $1M MRR",
+      R4: "Венчурные сделки",
+    },
+    pillarsShort: {
+      R1: "R1",
+      R2: "R2",
+      R3: "R3",
+      R4: "R4",
+    },
+    schedule: {
+      title: "Запланировать пост",
+      dateLabel: "Дата:",
+      timeLabel: "Время:",
+      pillarLabel: "Столб:",
+      pillarNone: "Не указан",
+      submit: "Поставить в план",
+      cancel: "Отмена",
+      scheduled: (date: string) => `Запланировано на ${date}`,
+      failed: "Не удалось запланировать",
+      inPlanBadge: (date: string) => `В плане · ${date}`,
+    },
+    drawer: {
+      fromCanvas: "ИЗ КАНВАСА",
+      hook: "ХУК",
+      body: "ТЕЛО",
+      cta: "CTA",
+      pillar: "СТОЛБ",
+      tags: "ТЕГИ",
+      tagsPlaceholder: "tag1, tag2, …",
+      notes: "ЗАМЕТКИ",
+      notesPlaceholder: "Заметки…",
+      metrics: "МЕТРИКИ",
+      metricsViews: "Просмотры",
+      metricsSaves: "Сохранения",
+      metricsReposts: "Репосты",
+      metricsComments: "Комментарии",
+      metricsClicks: "Клики",
+      saveMetrics: "Сохранить метрики",
+      markPublished: "Отметить опубликованным",
+      skip: "Пропустить",
+      delete: "Удалить",
+      deleteConfirmTitle: "Удалить пост?",
+      deleteConfirmDesc:
+        "Запланированный пост будет удалён. Канвас и тезис останутся.",
+      openCanvas: "Открыть канвас",
+    },
+    quickAdd: {
+      title: "Быстро добавить пост",
+      platformLabel: "ПЛАТФОРМА",
+      hookLabel: "ХУК / ИДЕЯ",
+      hookPlaceholder: "Напиши первую строку…",
+      pillarLabel: "СТОЛБ",
+      statusLabel: "СТАТУС",
+      statusReady: "Готов",
+      statusDraft: "Черновик",
+      add: "Добавить",
+      openInAi: "Открыть в AI →",
+      created: "Пост создан",
+      failed: "Не удалось создать пост",
+    },
+    toasts: {
+      scheduled: "Запланировано",
+      published: "Опубликовано",
+      skipped: "Пропущено",
+      deleted: "Удалено",
+      saveFailed: "Не удалось сохранить",
+      scheduleFailed: "Не удалось запланировать",
+    },
+    whatToWrite: {
+      title: "Что писать сегодня?",
+      open: "Открыть",
+      empty: "Пока нет рекомендаций",
+      types: {
+        dormant_gem: "Забытый тезис",
+        pillar_balance: "Балансировка столбов",
+        top_score: "Топ из базы",
+      },
+    },
+  },
+
   // ----- Dashboard extras -----
   dashboard: {
     duplicateSuccess: "Канвас продублирован",
@@ -662,6 +804,16 @@ export function formatRelativeRu(value: string | Date): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** Format a number compactly — 1234 → "1.2K", 12345 → "12K". */
+export function formatThousands(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  const abs = Math.abs(value);
+  if (abs < 1000) return String(Math.round(value));
+  if (abs < 10_000) return `${(value / 1000).toFixed(1).replace(".0", "")}K`;
+  if (abs < 1_000_000) return `${Math.round(value / 1000)}K`;
+  return `${(value / 1_000_000).toFixed(1).replace(".0", "")}M`;
 }
 
 /** Format a duration in seconds — `1ч 23м` / `45 мин`. */
