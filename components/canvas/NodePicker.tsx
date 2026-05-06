@@ -1,10 +1,15 @@
 "use client";
 
 /**
- * NodePicker — 1:1 port of `THE CONTENT-2/chrome.jsx#NodePicker`.
- * Searchable popover for "+" toolbar button. Picks an item, calls
- * `onPick({ type, presetType })`, and the caller creates a node at
- * the canvas viewport center.
+ * NodePicker — searchable popover for adding nodes.
+ * Two presentation modes:
+ *   - `centered`: pinned centered horizontally above the bottom toolbar.
+ *     Used when triggered from the "+" button (B2 fix).
+ *   - `at-point`: anchored at click position (with viewport clamping).
+ *     Used when triggered from a double-click on the canvas pane.
+ *
+ * Body has max-height: 70vh + overflow-y: auto, search header is
+ * `position: sticky; top: 0` so it never scrolls out of view.
  */
 
 import * as React from "react";
@@ -31,14 +36,19 @@ export interface NodePickerItem {
   presetType?: SourceInputType;
 }
 
+export type NodePickerMode =
+  | { kind: "centered" }
+  | { kind: "at-point"; x: number; y: number };
+
 interface NodePickerProps {
-  x: number;
-  y: number;
+  mode: NodePickerMode;
   onPick: (item: NodePickerItem) => void;
   onClose: () => void;
 }
 
-export function NodePicker({ x, y, onPick, onClose }: NodePickerProps) {
+const PICKER_W = 280;
+
+export function NodePicker({ mode, onPick, onClose }: NodePickerProps) {
   const [q, setQ] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -107,15 +117,37 @@ export function NodePicker({ x, y, onPick, onClose }: NodePickerProps) {
       (it.label + " " + it.desc).toLowerCase().includes(q.toLowerCase()),
   );
 
-  const w = 256;
-  const left =
-    typeof window !== "undefined"
-      ? Math.min(x, window.innerWidth - w - 12)
-      : x;
-  const top =
-    typeof window !== "undefined"
-      ? Math.min(y, window.innerHeight - 360)
-      : y;
+  const positionStyle: React.CSSProperties = React.useMemo(() => {
+    if (typeof window === "undefined") {
+      return { position: "fixed", left: 0, top: 0 };
+    }
+    if (mode.kind === "centered") {
+      // Centered horizontally, sitting just above the bottom toolbar.
+      // Toolbar bottom-center occupies ~bottom: 18px (var) + ~52px height.
+      const left = Math.max(12, (window.innerWidth - PICKER_W) / 2);
+      return {
+        position: "fixed",
+        left,
+        bottom: 96,
+        width: PICKER_W,
+      };
+    }
+    // at-point: clamp to viewport.
+    const w = PICKER_W;
+    const h = Math.min(
+      window.innerHeight * 0.7,
+      window.innerHeight - 24,
+    );
+    const left = Math.min(
+      Math.max(12, mode.x),
+      window.innerWidth - w - 12,
+    );
+    const top = Math.min(
+      Math.max(12, mode.y),
+      window.innerHeight - h - 12,
+    );
+    return { position: "fixed", left, top, width: w };
+  }, [mode]);
 
   return (
     <>
@@ -125,10 +157,25 @@ export function NodePicker({ x, y, onPick, onClose }: NodePickerProps) {
       />
       <div
         className="co-node-picker"
-        style={{ left, top }}
+        style={{
+          ...positionStyle,
+          maxHeight: "70vh",
+          overflowY: "auto",
+          width: PICKER_W,
+        }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="co-picker-search-wrap">
+        <div
+          className="co-picker-search-wrap"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+            background: "#1a1c1e",
+            paddingBottom: 6,
+            marginBottom: 0,
+          }}
+        >
           <Search size={13} className="co-picker-search-icon" />
           <input
             ref={inputRef}

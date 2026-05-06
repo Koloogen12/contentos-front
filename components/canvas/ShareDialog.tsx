@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeDate } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface ShareDialogProps {
   canvasId: string;
@@ -72,18 +73,16 @@ export function ShareDialog({ canvasId, open, onOpenChange }: ShareDialogProps) 
             revoked_at: null,
           };
           if (!prev) return [optimistic];
-          // Skip if it's already there (defensive).
           if (prev.some((t) => t.id === created.id)) return prev;
           return [optimistic, ...prev];
         },
       );
-      // Refetch to get authoritative `created_by_user_id` and `created_at`.
       qc.invalidateQueries({ queryKey: TOKENS_KEY(canvasId) });
-      toast.success("Public link created");
+      toast.success(t.shareDialog.created);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not create share link",
+        err instanceof ApiError ? err.detail : t.shareDialog.couldNotCreate,
       ),
   });
 
@@ -96,18 +95,15 @@ export function ShareDialog({ canvasId, open, onOpenChange }: ShareDialogProps) 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Share this canvas</DialogTitle>
-          <DialogDescription>
-            Anyone with the link can view this canvas read-only and clone it
-            into their own workspace.
-          </DialogDescription>
+          <DialogTitle>{t.shareDialog.title}</DialogTitle>
+          <DialogDescription>{t.shareDialog.sub}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Link2 className="h-3.5 w-3.5" />
-              Public links
+              {t.shareDialog.publicLinks}
             </div>
 
             {tokensQuery.isPending ? (
@@ -122,19 +118,18 @@ export function ShareDialog({ canvasId, open, onOpenChange }: ShareDialogProps) 
               >
                 {tokensQuery.error instanceof ApiError
                   ? tokensQuery.error.detail
-                  : "Could not load share links."}
+                  : t.shareDialog.couldNotLoad}
               </div>
             ) : visibleTokens.length === 0 ? (
               <div className="rounded-md border border-dashed border-border bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground">
-                No public links yet. Anyone with the link can view this canvas
-                read-only and clone it into their own workspace.
+                {t.shareDialog.empty}
               </div>
             ) : (
               <ul className="space-y-1.5">
-                {visibleTokens.map((t) => (
+                {visibleTokens.map((tok) => (
                   <ShareTokenRow
-                    key={t.id}
-                    token={t}
+                    key={tok.id}
+                    token={tok}
                     origin={origin}
                     canvasId={canvasId}
                   />
@@ -151,11 +146,12 @@ export function ShareDialog({ canvasId, open, onOpenChange }: ShareDialogProps) 
           >
             {createMutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Creating link…
+                <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                {t.shareDialog.creating}
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4" /> Create new public link
+                <Plus className="h-4 w-4" /> {t.shareDialog.create}
               </>
             )}
           </Button>
@@ -168,8 +164,8 @@ export function ShareDialog({ canvasId, open, onOpenChange }: ShareDialogProps) 
             >
               <ShieldAlert className="h-3 w-3" />
               {showRevoked
-                ? `Hide ${revokedTokens.length} revoked`
-                : `Show ${revokedTokens.length} revoked`}
+                ? t.shareDialog.hideRevoked(revokedTokens.length)
+                : t.shareDialog.showRevoked(revokedTokens.length)}
             </button>
           )}
         </div>
@@ -209,11 +205,11 @@ function ShareTokenRow({
             : prev,
       );
       qc.invalidateQueries({ queryKey: TOKENS_KEY(canvasId) });
-      toast.success("Link revoked");
+      toast.success(t.shareDialog.revoked);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not revoke link",
+        err instanceof ApiError ? err.detail : t.shareDialog.couldNotRevoke,
       ),
   });
 
@@ -221,10 +217,10 @@ function ShareTokenRow({
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
-      toast.success("Link copied to clipboard");
+      toast.success(t.shareDialog.copySuccess);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Could not copy to clipboard");
+      toast.error(t.shareDialog.copyError);
     }
   };
 
@@ -244,8 +240,12 @@ function ShareTokenRow({
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
             {isRevoked
-              ? `Revoked ${formatRelativeDate(token.revoked_at as string)}`
-              : `Created ${formatRelativeDate(token.created_at)}`}
+              ? t.shareDialog.revokedAt(
+                  formatRelativeDate(token.revoked_at as string),
+                )
+              : t.shareDialog.createdAt(
+                  formatRelativeDate(token.created_at),
+                )}
           </div>
         </div>
         {!isRevoked && (
@@ -260,7 +260,7 @@ function ShareTokenRow({
               ) : (
                 <Copy className="h-3 w-3" />
               )}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t.shareDialog.copied : t.shareDialog.copy}
             </button>
             {confirmRevoke ? (
               <>
@@ -275,7 +275,7 @@ function ShareTokenRow({
                   ) : (
                     <Trash2 className="h-3 w-3" />
                   )}
-                  Confirm
+                  {t.shareDialog.revokeConfirm}
                 </button>
                 <button
                   type="button"
@@ -283,7 +283,7 @@ function ShareTokenRow({
                   disabled={revokeMutation.isPending}
                   className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"
                 >
-                  Cancel
+                  {t.shareDialog.revokeCancel}
                 </button>
               </>
             ) : (
@@ -293,7 +293,7 @@ function ShareTokenRow({
                 className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-3 w-3" />
-                Revoke
+                {t.shareDialog.revoke}
               </button>
             )}
           </div>

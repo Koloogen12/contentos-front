@@ -4,12 +4,14 @@ import * as React from "react";
 import {
   Background,
   BackgroundVariant,
+  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStore,
   type Connection,
   type Edge as RfEdge,
   type EdgeChange,
@@ -53,14 +55,26 @@ import {
 } from "@/components/ui/dialog";
 import { CanvasNodeContext } from "./canvasContext";
 import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar";
-import {
-  CanvasSwatches,
-  CanvasZoomControls,
-} from "./CanvasZoomControls";
-import { NodePicker, type NodePickerItem } from "./NodePicker";
+import { CanvasZoomControls } from "./CanvasZoomControls";
+import { NodePicker, type NodePickerItem, type NodePickerMode } from "./NodePicker";
 import { ExtractNode } from "./nodes/ExtractNode";
 import { FormatNode } from "./nodes/FormatNode";
 import { SourceNode } from "./nodes/SourceNode";
+import { TweaksPanel } from "./TweaksPanel";
+import {
+  type AnyClientObject,
+  type ArrowObject,
+  type ClientObject,
+  type ClientObjectKind,
+  ArrowOverlay,
+  CommentNode,
+  NoteNode,
+  TextNode,
+  loadClientObjects,
+  makeId,
+  makeRfNodeForClientObject,
+  saveClientObjects,
+} from "./ClientObjects";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +86,9 @@ const NODE_TYPES: NodeTypes = {
   source: SourceNode,
   extract: ExtractNode,
   format: FormatNode,
+  "co-note": NoteNode,
+  "co-comment": CommentNode,
+  "co-text": TextNode,
 };
 
 interface RfNodeData extends Record<string, unknown> {
@@ -88,6 +105,8 @@ function isValidConnectionTypes(source: NodeType, target: NodeType): boolean {
   return VALID_EDGE_TYPES[source].includes(target);
 }
 
+const TWEAKS_COLLAPSED_KEY = "contentos.tweaks-panel.collapsed";
+
 export function CanvasEditor(props: CanvasEditorProps) {
   return (
     <ReactFlowProvider>
@@ -100,6 +119,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const qc = useQueryClient();
   const canvasId = canvas.id;
   const reactFlow = useReactFlow();
+  const transform = useStore((s) => s.transform);
 
   const [runningRuns, setRunningRuns] = React.useState<
     Record<string, string /* skillRunId */>
@@ -111,10 +131,58 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     null,
   );
   const [tool, setTool] = React.useState<CanvasTool>("select");
-  const [pickerAt, setPickerAt] = React.useState<{
-    x: number;
-    y: number;
+  const [picker, setPicker] = React.useState<{
+    mode: NodePickerMode;
+    flowPosition?: { x: number; y: number };
   } | null>(null);
+
+  // ---- Tweaks panel collapse state ----
+  const [tweaksCollapsed, setTweaksCollapsed] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    setTweaksCollapsed(
+      window.localStorage.getItem(TWEAKS_COLLAPSED_KEY) === "1",
+    );
+  }, []);
+
+  const closeTweaks = React.useCallback(() => {
+    setTweaksCollapsed(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(TWEAKS_COLLAPSED_KEY, "1");
+    }
+  }, []);
+
+  // ---- Client-side objects (note/comment/text/arrow) ----
+  const [clientObjects, setClientObjects] = React.useState<AnyClientObject[]>(
+    () => loadClientObjects(canvasId),
+  );
+  const [arrowDraft, setArrowDraft] = React.useState<{
+    from: { x: number; y: number };
+  } | null>(null);
+  const [selectedClientId, setSelectedClientId] = React.useState<string | null>(
+    null,
+  );
+  const [hasShownLocalToast, setHasShownLocalToast] = React.useState(false);
+
+  React.useEffect(() => {
+    saveClientObjects(canvasId, clientObjects);
+  }, [canvasId, clientObjects]);
+
+  const updateClientText = React.useCallback(
+    (id: string, text: string) => {
+      setClientObjects((prev) =>
+        prev.map((o) =>
+          o.id === id && o.kind !== "arrow" ? { ...o, text } : o,
+        ),
+      );
+    },
+    [],
+  );
+
+  const deleteClientObject = React.useCallback((id: string) => {
+    setClientObjects((prev) => prev.filter((o) => o.id !== id));
+    setSelectedClientId((cur) => (cur === id ? null : cur));
+  }, []);
 
   const buildRfNode = React.useCallback(
     (n: NodeOut): RfNode<RfNodeData> => ({
@@ -170,9 +238,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   // Restyle edges when running set changes
   React.useEffect(() => {
     const runningSet = new Set(Object.keys(runningRuns));
-    // Augment with locally-known node statuses
     rfNodes.forEach((n) => {
-      if (n.data.node.status === "running") runningSet.add(n.id);
+      if (n.data?.node?.status === "running") runningSet.add(n.id);
     });
     setRfEdges((prev) =>
       prev.map((e) => {
@@ -184,6 +251,19 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       }),
     );
   }, [runningRuns, rfNodes]);
+
+  // ----- Combine server + client RF nodes -----
+  const allRfNodes = React.useMemo<RfNode<Record<string, unknown>>[]>(() => {
+    const clientRfNodes = clientObjects
+      .filter((o): o is ClientObject => o.kind !== "arrow")
+      .map((o) =>
+        makeRfNodeForClientObject(o, {
+          onTextChange: updateClientText,
+          onDelete: deleteClientObject,
+        }),
+      );
+    return [...rfNodes, ...clientRfNodes] as RfNode<Record<string, unknown>>[];
+  }, [rfNodes, clientObjects, updateClientText, deleteClientObject]);
 
   // ----- Node snapshot helpers -----
   const patchRfNodeSnapshot = React.useCallback(
@@ -242,13 +322,54 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
 
   // ----- React Flow handlers -----
   const onNodesChange: OnNodesChange = React.useCallback((changes) => {
-    setRfNodes(
-      (prev) => applyNodeChanges(changes, prev) as RfNode<RfNodeData>[],
-    );
+    // Split changes between server nodes (rfNodes) and client objects.
+    const clientIds = new Set<string>();
+    setClientObjects((prev) => {
+      prev.forEach((o) => {
+        if (o.kind !== "arrow") clientIds.add(o.id);
+      });
+      return prev;
+    });
+    const serverChanges: NodeChange[] = [];
+    const clientChanges: NodeChange[] = [];
+    for (const ch of changes) {
+      const id = "id" in ch ? (ch as { id?: string }).id : undefined;
+      if (id && clientIds.has(id)) clientChanges.push(ch);
+      else serverChanges.push(ch);
+    }
+    if (serverChanges.length > 0) {
+      setRfNodes(
+        (prev) =>
+          applyNodeChanges(serverChanges, prev) as RfNode<RfNodeData>[],
+      );
+    }
+    // Apply position/select changes to client objects.
+    if (clientChanges.length > 0) {
+      setClientObjects((prev) =>
+        prev.map((o) => {
+          if (o.kind === "arrow") return o;
+          const ch = clientChanges.find(
+            (c) => "id" in c && (c as { id?: string }).id === o.id,
+          );
+          if (!ch) return o;
+          if (ch.type === "position" && ch.position) {
+            return { ...o, x: ch.position.x, y: ch.position.y };
+          }
+          return o;
+        }),
+      );
+    }
     for (const ch of changes) {
       if (ch.type === "select") {
-        if (ch.selected) setSelectedNodeId(ch.id);
-        else setSelectedNodeId((cur) => (cur === ch.id ? null : cur));
+        const id = ch.id;
+        if (clientIds.has(id)) {
+          if (ch.selected) setSelectedClientId(id);
+          else
+            setSelectedClientId((cur) => (cur === id ? null : cur));
+        } else {
+          if (ch.selected) setSelectedNodeId(id);
+          else setSelectedNodeId((cur) => (cur === id ? null : cur));
+        }
       }
     }
   }, []);
@@ -259,9 +380,14 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
 
   const onNodeDragStop = React.useCallback(
     (_event: unknown, node: RfNode) => {
+      // Only persist server nodes' positions; client positions are saved via state.
+      const isClient = clientObjects.some(
+        (o) => o.kind !== "arrow" && o.id === node.id,
+      );
+      if (isClient) return;
       flushPosition(node.id, node.position.x, node.position.y);
     },
-    [flushPosition],
+    [flushPosition, clientObjects],
   );
 
   // ----- Edge create -----
@@ -348,6 +474,11 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   // ----- Node delete via Backspace -----
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (tool !== "select") setTool("select");
+        if (arrowDraft) setArrowDraft(null);
+        return;
+      }
       if (e.key !== "Backspace" && e.key !== "Delete") return;
       const target = e.target as HTMLElement | null;
       if (
@@ -358,6 +489,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       ) {
         return;
       }
+      // Prefer client object selection.
+      if (selectedClientId) {
+        e.preventDefault();
+        deleteClientObject(selectedClientId);
+        return;
+      }
       if (!selectedNodeId) return;
       const snap = getNodeSnapshot(selectedNodeId);
       if (!snap) return;
@@ -366,7 +503,14 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNodeId, getNodeSnapshot]);
+  }, [
+    selectedNodeId,
+    selectedClientId,
+    deleteClientObject,
+    getNodeSnapshot,
+    tool,
+    arrowDraft,
+  ]);
 
   const deleteNodeMutation = useMutation({
     mutationFn: (nodeId: string) => deleteNode(nodeId),
@@ -413,24 +557,36 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
 
   const handlePickerPick = React.useCallback(
     (item: NodePickerItem) => {
-      const viewport = reactFlow.getViewport();
-      const flowEl = document.querySelector(".react-flow") as HTMLElement | null;
-      const rect = flowEl?.getBoundingClientRect();
-      const centerScreen = rect
-        ? { x: rect.width / 2, y: rect.height / 2 }
-        : { x: 200, y: 200 };
-      const baseX = (centerScreen.x - viewport.x) / viewport.zoom;
-      const baseY = (centerScreen.y - viewport.y) / viewport.zoom;
-      const offset = (rfNodes.length % 6) * 32;
+      const flowPos = picker?.flowPosition;
+      let x: number;
+      let y: number;
+      if (flowPos) {
+        // Spawned at click position from double-click.
+        x = flowPos.x - 160;
+        y = flowPos.y - 60;
+      } else {
+        // Centered above viewport.
+        const viewport = reactFlow.getViewport();
+        const flowEl = document.querySelector(".react-flow") as HTMLElement | null;
+        const rect = flowEl?.getBoundingClientRect();
+        const centerScreen = rect
+          ? { x: rect.width / 2, y: rect.height / 2 }
+          : { x: 200, y: 200 };
+        const baseX = (centerScreen.x - viewport.x) / viewport.zoom;
+        const baseY = (centerScreen.y - viewport.y) / viewport.zoom;
+        const offset = (rfNodes.length % 6) * 32;
+        x = baseX - 160 + offset;
+        y = baseY - 60 + offset;
+      }
       createNodeMutation.mutate({
         type: item.type,
-        x: baseX - 160 + offset,
-        y: baseY - 60 + offset,
+        x,
+        y,
         presetType: item.presetType,
       });
-      setPickerAt(null);
+      setPicker(null);
     },
-    [createNodeMutation, reactFlow, rfNodes.length],
+    [createNodeMutation, picker, reactFlow, rfNodes.length],
   );
 
   // ----- Update node data -----
@@ -624,9 +780,154 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     ],
   );
 
+  // ----- Pane click / double-click handling for B2 + B3 -----
+  const lastPaneClickRef = React.useRef<{ t: number; x: number; y: number } | null>(
+    null,
+  );
+
+  const showLocalToastOnce = React.useCallback(() => {
+    if (hasShownLocalToast) return;
+    setHasShownLocalToast(true);
+    toast.info("Заметка сохранена локально", {
+      description:
+        "Эти объекты сохраняются локально в твоём браузере (не на сервере).",
+      duration: 4500,
+    });
+  }, [hasShownLocalToast]);
+
+  const spawnClientObject = React.useCallback(
+    (kind: ClientObjectKind, flow: { x: number; y: number }) => {
+      const id = makeId();
+      const obj: ClientObject = {
+        id,
+        kind,
+        x: flow.x,
+        y: flow.y,
+        text: "",
+        ...(kind === "note"
+          ? { w: 200, h: 160, color: "#FFE082" }
+          : kind === "comment"
+            ? { w: 240 }
+            : {}),
+      };
+      setClientObjects((prev) => [...prev, obj]);
+      setSelectedClientId(id);
+      setTool("select");
+      showLocalToastOnce();
+    },
+    [showLocalToastOnce],
+  );
+
+  const onPaneClick = React.useCallback(
+    (event: React.MouseEvent) => {
+      const flowPos = reactFlow.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      // Tool-driven creation.
+      if (tool === "note" || tool === "comment" || tool === "text") {
+        spawnClientObject(tool, flowPos);
+        return;
+      }
+
+      if (tool === "arrow") {
+        if (!arrowDraft) {
+          setArrowDraft({ from: flowPos });
+          return;
+        }
+        const newArrow: ArrowObject = {
+          id: makeId(),
+          kind: "arrow",
+          from: arrowDraft.from,
+          to: flowPos,
+        };
+        setClientObjects((prev) => [...prev, newArrow]);
+        setArrowDraft(null);
+        setTool("select");
+        showLocalToastOnce();
+        return;
+      }
+
+      // Double-click detection on empty pane (B2).
+      if (tool === "select") {
+        const now = Date.now();
+        const last = lastPaneClickRef.current;
+        if (
+          last &&
+          now - last.t < 280 &&
+          Math.abs(last.x - event.clientX) < 6 &&
+          Math.abs(last.y - event.clientY) < 6
+        ) {
+          // It's a double-click.
+          lastPaneClickRef.current = null;
+          setPicker({
+            mode: { kind: "at-point", x: event.clientX, y: event.clientY },
+            flowPosition: flowPos,
+          });
+          return;
+        }
+        lastPaneClickRef.current = {
+          t: now,
+          x: event.clientX,
+          y: event.clientY,
+        };
+      }
+    },
+    [tool, arrowDraft, reactFlow, spawnClientObject, showLocalToastOnce],
+  );
+
+  // ----- Cursor for active tool -----
+  const surfaceCursor =
+    tool === "select"
+      ? "default"
+      : tool === "pan"
+        ? "grab"
+        : "crosshair";
+
+  // ----- Selected node for tweaks -----
+  const selectedNodeForTweaks = React.useMemo(() => {
+    if (!selectedNodeId) return null;
+    const snap = getNodeSnapshot(selectedNodeId);
+    if (!snap) return null;
+    if (snap.type !== "extract" && snap.type !== "format") return null;
+    return snap;
+  }, [selectedNodeId, getNodeSnapshot]);
+
+  // When selection changes to a tweakable node, allow re-opening if user
+  // had collapsed previously. We don't auto-open if the user collapsed
+  // (per spec) — but when there's no selection we keep state as-is.
+  // Tweaks visibility = node selected + not collapsed.
+  const showTweaks = !!selectedNodeForTweaks && !tweaksCollapsed;
+
+  // Reopen panel when user explicitly clicks the bumper to reopen tweaks.
+  const reopenTweaks = React.useCallback(() => {
+    setTweaksCollapsed(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(TWEAKS_COLLAPSED_KEY, "0");
+    }
+  }, []);
+
+  // ----- Arrow flow→screen mapper -----
+  const flowToScreen = React.useCallback(
+    (x: number, y: number) => {
+      const [tx, ty, scale] = transform;
+      return { x: x * scale + tx, y: y * scale + ty };
+    },
+    [transform],
+  );
+
+  const arrows = React.useMemo(
+    () => clientObjects.filter((o): o is ArrowObject => o.kind === "arrow"),
+    [clientObjects],
+  );
+
   return (
     <CanvasNodeContext.Provider value={ctxValue}>
-      <div className="relative flex-1 co-canvas-surface">
+      <div
+        className="relative flex-1 co-canvas-surface"
+        style={{ cursor: surfaceCursor }}
+      >
         {pipelineRunning && (
           <div className="co-run-badge">
             <Loader2 size={14} className="animate-spin" />
@@ -657,8 +958,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           {t.canvas.runAll}
         </button>
 
-        <ReactFlow<RfNode<RfNodeData>, RfEdge>
-          nodes={rfNodes}
+        <ReactFlow<RfNode<Record<string, unknown>>, RfEdge>
+          nodes={allRfNodes}
           edges={rfEdges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange as (changes: NodeChange[]) => void}
@@ -666,6 +967,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onEdgesDelete={onEdgesDelete}
+          onPaneClick={onPaneClick}
           deleteKeyCode={null}
           fitView
           fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
@@ -681,32 +983,80 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             size={0.75}
             color="rgba(255,255,255,0.1)"
           />
+          {/* B4: real MiniMap replaces colored swatches */}
+          <MiniMap
+            pannable
+            zoomable
+            position="bottom-right"
+            maskColor="rgba(0,0,0,0.6)"
+            nodeColor={(n) => {
+              switch (n.type) {
+                case "source":
+                  return "#3b82f6";
+                case "extract":
+                  return "#eab308";
+                case "format":
+                  return "#a855f7";
+                default:
+                  return "#52525b";
+              }
+            }}
+            style={{
+              background: "rgba(20,22,24,0.92)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 8,
+            }}
+          />
         </ReactFlow>
+
+        {/* Arrow overlay — sits above ReactFlow, below toolbar/picker */}
+        <ArrowOverlay
+          arrows={arrows}
+          flowToScreen={flowToScreen}
+          selectedId={selectedClientId}
+        />
 
         {/* Bottom-center toolbar */}
         <CanvasToolbar
           tool={tool}
-          setTool={setTool}
+          setTool={(next) => {
+            setTool(next);
+            setArrowDraft(null);
+          }}
           onAddNode={() =>
-            setPickerAt({
-              x: window.innerWidth / 2 - 128,
-              y: window.innerHeight - 380,
-            })
+            setPicker({ mode: { kind: "centered" } })
           }
         />
 
         {/* Bottom-left zoom */}
         <CanvasZoomControls />
 
-        {/* Bottom-right swatches */}
-        <CanvasSwatches />
+        {/* Tweaks panel (B7) */}
+        {showTweaks && selectedNodeForTweaks && (
+          <TweaksPanel
+            node={selectedNodeForTweaks}
+            onClose={closeTweaks}
+          />
+        )}
 
-        {pickerAt && (
+        {/* Re-open tweaks affordance when collapsed but a tweakable node
+            is selected (small unobtrusive bumper). */}
+        {!showTweaks && selectedNodeForTweaks && (
+          <button
+            type="button"
+            onClick={reopenTweaks}
+            className="absolute bottom-[200px] right-4 z-20 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[11px] font-medium text-zinc-200 backdrop-blur hover:bg-black/80"
+            title="Открыть Tweaks"
+          >
+            Tweaks
+          </button>
+        )}
+
+        {picker && (
           <NodePicker
-            x={pickerAt.x}
-            y={pickerAt.y}
+            mode={picker.mode}
             onPick={handlePickerPick}
-            onClose={() => setPickerAt(null)}
+            onClose={() => setPicker(null)}
           />
         )}
       </div>

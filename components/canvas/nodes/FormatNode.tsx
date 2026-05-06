@@ -363,7 +363,7 @@ export function FormatNode({ data, selected }: NodeProps) {
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
-                  <Send size={13} /> Опубликовать в Telegram
+                  <Send size={13} /> {t.publish.title}
                 </button>
               )}
             </>

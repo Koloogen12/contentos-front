@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 const STEPS = [1, 2, 3] as const;
 type Step = (typeof STEPS)[number];
@@ -140,7 +141,7 @@ export function OnboardingWizard() {
     return (
       <BareLayout>
         <div className="flex min-h-[60vh] items-center justify-center">
-          <Spinner size={20} label="Loading…" />
+          <Spinner size={20} label={t.onboarding.loading} />
         </div>
       </BareLayout>
     );
@@ -188,7 +189,9 @@ function BareLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex h-14 items-center gap-2 border-b border-border px-6">
         <Sparkles className="h-5 w-5 text-primary" />
-        <span className="text-sm font-semibold tracking-tight">ContentOS</span>
+        <span className="text-sm font-semibold tracking-tight">
+          {t.brandName}
+        </span>
       </div>
       {children}
     </div>
@@ -251,16 +254,16 @@ function Step1AboutYou({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not save brand context",
+        err instanceof ApiError ? err.detail : t.onboarding.couldNotSaveBrand,
       ),
   });
 
   return (
     <Card>
-      <h1 className="text-2xl font-semibold tracking-tight">About you</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">О тебе</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Just the essentials — we&apos;ll inject these into every AI prompt so
-        the output sounds like you.
+        Самое необходимое — это попадёт в каждый AI-промпт, чтобы текст звучал
+        как ты.
       </p>
 
       <form
@@ -272,19 +275,19 @@ function Step1AboutYou({
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="onboarding-name">Name</Label>
+            <Label htmlFor="onboarding-name">Имя</Label>
             <Input
               id="onboarding-name"
               value={stash.author_name}
               onChange={(e) =>
                 setStash((s) => ({ ...s, author_name: e.target.value }))
               }
-              placeholder="Danil Kochnev"
+              placeholder="Данил Кочнев"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="onboarding-handle">Handle</Label>
+            <Label htmlFor="onboarding-handle">Хендл</Label>
             <Input
               id="onboarding-handle"
               value={stash.author_handle}
@@ -296,7 +299,7 @@ function Step1AboutYou({
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="onboarding-bio">Short bio</Label>
+          <Label htmlFor="onboarding-bio">Короткое био</Label>
           <Textarea
             id="onboarding-bio"
             rows={2}
@@ -304,11 +307,11 @@ function Step1AboutYou({
             onChange={(e) =>
               setStash((s) => ({ ...s, author_bio: e.target.value }))
             }
-            placeholder="One-liner about who you are and what you build."
+            placeholder="Одна строка про то, кто ты и что строишь."
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="onboarding-voice">Voice rules</Label>
+          <Label htmlFor="onboarding-voice">Правила голоса</Label>
           <Textarea
             id="onboarding-voice"
             rows={3}
@@ -316,13 +319,15 @@ function Step1AboutYou({
             onChange={(e) =>
               setStash((s) => ({ ...s, voice_rules: e.target.value }))
             }
-            placeholder="Short sentences. No corporate fluff. Words you use, words you don't."
+            placeholder="Короткие фразы. Без корпоративного блаба. Слова, которые ты используешь, и которые избегаешь."
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="onboarding-cta">
-            CTA keywords{" "}
-            <span className="text-muted-foreground">(comma-separated)</span>
+            CTA-слова{" "}
+            <span className="text-muted-foreground">
+              {t.knowledge.tagsHint}
+            </span>
           </Label>
           <Input
             id="onboarding-cta"
@@ -330,7 +335,7 @@ function Step1AboutYou({
             onChange={(e) =>
               setStash((s) => ({ ...s, cta_keywords: e.target.value }))
             }
-            placeholder="STACK, QUESTIONS, WORK"
+            placeholder="СТЕК, ВОПРОСЫ, РАБОТА"
           />
         </div>
 
@@ -341,7 +346,7 @@ function Step1AboutYou({
           >
             {mutation.error instanceof ApiError
               ? mutation.error.detail
-              : "Could not save."}
+              : t.onboarding.couldNotSave}
           </div>
         )}
 
@@ -352,16 +357,17 @@ function Step1AboutYou({
             onClick={onSkip}
             disabled={mutation.isPending}
           >
-            <X className="h-4 w-4" /> Skip for now
+            <X className="h-4 w-4" /> {t.onboarding.skip}
           </Button>
           <Button type="submit" disabled={mutation.isPending}>
             {mutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                {t.common.saving}
               </>
             ) : (
               <>
-                Continue <ArrowRight className="h-4 w-4" />
+                Продолжить <ArrowRight className="h-4 w-4" />
               </>
             )}
           </Button>
@@ -406,18 +412,18 @@ function Step2PickTemplate({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not create canvas",
+        err instanceof ApiError ? err.detail : t.onboarding.couldNotCreateCanvas,
       ),
   });
 
   return (
     <Card>
       <h1 className="text-2xl font-semibold tracking-tight">
-        Pick a starting template
+        Выбери стартовый шаблон
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Templates wire up sources, extracts, and formats for common pipelines.
-        You can edit any of it after.
+        Шаблоны соединяют источники, извлечение и формат для типовых
+        пайплайнов. Всё можно отредактировать потом.
       </p>
 
       <div className="mt-6 space-y-2">
@@ -436,10 +442,10 @@ function Step2PickTemplate({
           </div>
           <div>
             <div className="text-sm font-medium text-foreground">
-              Start blank
+              Начать с пустого
             </div>
             <div className="text-xs text-muted-foreground">
-              Empty canvas — drag in your own nodes.
+              Пустой канвас — ноды добавишь сам.
             </div>
           </div>
         </button>
@@ -450,17 +456,17 @@ function Step2PickTemplate({
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {templatesQuery.error instanceof ApiError
               ? templatesQuery.error.detail
-              : "Could not load templates."}
+              : t.onboarding.couldNotLoadTemplates}
           </div>
         ) : (
-          (templatesQuery.data ?? []).map((t) => {
+          (templatesQuery.data ?? []).map((tpl) => {
             const isSelected =
-              selected !== "blank" && selected?.id === t.id;
+              selected !== "blank" && selected?.id === tpl.id;
             return (
               <button
-                key={t.id}
+                key={tpl.id}
                 type="button"
-                onClick={() => setSelected(t)}
+                onClick={() => setSelected(tpl)}
                 className={cn(
                   "flex w-full items-start gap-3 rounded-lg border p-4 text-left transition-colors",
                   isSelected
@@ -473,11 +479,11 @@ function Step2PickTemplate({
                 </div>
                 <div>
                   <div className="text-sm font-medium text-foreground">
-                    {t.name}
+                    {tpl.name}
                   </div>
-                  {t.description && (
+                  {tpl.description && (
                     <div className="text-xs text-muted-foreground">
-                      {t.description}
+                      {tpl.description}
                     </div>
                   )}
                 </div>
@@ -489,7 +495,7 @@ function Step2PickTemplate({
 
       <div className="mt-6 flex items-center justify-between gap-2">
         <Button type="button" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" /> Back
+          <ArrowLeft className="h-4 w-4" /> Назад
         </Button>
         <Button
           type="button"
@@ -498,11 +504,11 @@ function Step2PickTemplate({
         >
           {mutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Creating…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t.common.creating}
             </>
           ) : (
             <>
-              Continue <ArrowRight className="h-4 w-4" />
+              Продолжить <ArrowRight className="h-4 w-4" />
             </>
           )}
         </Button>
@@ -556,36 +562,34 @@ function Step3VoiceSamples({
           platform: platform.trim() || null,
         }));
       if (samples.length === 0) {
-        throw new Error("Need at least one post of 20+ characters");
+        throw new Error("Нужен хотя бы один пост от 20 символов");
       }
       return bulkCreateVoiceSamples(samples);
     },
     onSuccess: (result) => {
-      toast.success(
-        `Saved ${result.created} ${result.created === 1 ? "sample" : "samples"}`,
-      );
+      toast.success(`Сохранено образцов: ${result.created}`);
       onFinish();
     },
     onError: (err) =>
       toast.error(
-        err instanceof Error ? err.message : "Could not save samples",
+        err instanceof Error ? err.message : t.onboarding.couldNotSaveSamples,
       ),
   });
 
   return (
     <Card>
       <h1 className="text-2xl font-semibold tracking-tight">
-        Train your voice
+        Обучи свой голос
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Optional. Paste a few of your best posts (separated by{" "}
+        Необязательно. Вставь несколько лучших постов (через{" "}
         <code className="rounded bg-muted/60 px-1 py-0.5 text-[11px]">---</code>
-        ) so the AI mirrors how you actually write.
+        ), чтобы AI повторял твой стиль.
       </p>
 
       <div className="mt-6 space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="onboarding-platform">Default platform</Label>
+          <Label htmlFor="onboarding-platform">Платформа по умолчанию</Label>
           <Input
             id="onboarding-platform"
             value={platform}
@@ -595,24 +599,24 @@ function Step3VoiceSamples({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="onboarding-samples">Posts</Label>
+          <Label htmlFor="onboarding-samples">Посты</Label>
           <Textarea
             id="onboarding-samples"
             rows={10}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={`Post one\n\n---\n\nPost two\n\n---\n\nPost three`}
+            placeholder={`Пост 1\n\n---\n\nПост 2\n\n---\n\nПост 3`}
           />
         </div>
       </div>
 
       <div className="mt-6 flex items-center justify-between gap-2">
         <Button type="button" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" /> Back
+          <ArrowLeft className="h-4 w-4" /> Назад
         </Button>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" onClick={onFinish}>
-            Skip for now
+            {t.onboarding.skip}
           </Button>
           <Button
             type="button"
@@ -621,10 +625,10 @@ function Step3VoiceSamples({
           >
             {mutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                <Loader2 className="h-4 w-4 animate-spin" /> {t.common.saving}
               </>
             ) : (
-              "Finish"
+              "Готово"
             )}
           </Button>
         </div>

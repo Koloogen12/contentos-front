@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface PublishDialogProps {
   nodeId: string;
@@ -68,7 +69,7 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
     const unsub = subscribePublishLog(publishLogId, {
       onComplete: (log) => {
         setTerminalLog(log);
-        toast.success("Sent");
+        toast.success(t.publish.sent);
       },
       onError: (msg, log) => {
         setTerminalLog(log ?? null);
@@ -88,7 +89,7 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not start publishing",
+        err instanceof ApiError ? err.detail : t.publish.couldNotStart,
       ),
   });
 
@@ -103,11 +104,8 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Publish to Telegram</DialogTitle>
-          <DialogDescription>
-            Pick a destination channel or chat. The bot must already be an
-            admin there.
-          </DialogDescription>
+          <DialogTitle>{t.publish.title}</DialogTitle>
+          <DialogDescription>{t.publish.sub}</DialogDescription>
         </DialogHeader>
 
         {targetsQuery.isPending ? (
@@ -122,19 +120,19 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
           >
             {targetsQuery.error instanceof ApiError
               ? targetsQuery.error.detail
-              : "Could not load targets."}
+              : t.publish.couldNotLoad}
           </div>
         ) : targets.length === 0 ? (
           <div className="rounded-md border border-border bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground">
-            <p>No Telegram targets configured.</p>
+            <p>{t.publish.noTargetsTitle}</p>
             <p className="mt-1 text-xs">
-              Add one in{" "}
+              {t.publish.noTargetsSub}{" "}
               <Link
                 href="/settings"
                 className="text-primary hover:underline"
                 onClick={() => onOpenChange(false)}
               >
-                Settings
+                {t.publish.settingsLink}
               </Link>
               .
             </p>
@@ -157,7 +155,9 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
 
         <DialogFooter>
           {terminalLog ? (
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
+            <Button onClick={() => onOpenChange(false)}>
+              {t.publish.close}
+            </Button>
           ) : (
             <>
               <Button
@@ -165,7 +165,7 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
                 onClick={() => onOpenChange(false)}
                 disabled={publishing}
               >
-                Cancel
+                {t.common.cancel}
               </Button>
               <Button
                 onClick={() => selectedId && publishMutation.mutate(selectedId)}
@@ -179,12 +179,12 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
                 {publishing || publishMutation.isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    {publishing ? "Sending…" : "Starting…"}
+                    {publishing ? t.publish.sending : t.publish.starting}
                   </>
                 ) : (
                   <>
                     <Send className="h-4 w-4" />
-                    Publish
+                    {t.publish.publish}
                   </>
                 )}
               </Button>
@@ -235,7 +235,7 @@ function TargetRow({
             </span>
             {target.is_default && (
               <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                Default
+                {t.publish.default}
               </span>
             )}
           </div>
@@ -266,16 +266,18 @@ function PublishResult({ log }: { log: PublishLogOut }) {
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="font-medium">{sent ? "Sent" : "Failed"}</div>
+          <div className="font-medium">
+            {sent ? t.publish.sent : t.publish.failed}
+          </div>
           {sent ? (
             <p className="mt-1 text-xs text-emerald-200/80">
               {log.message_id
-                ? `Message ID ${log.message_id}.`
-                : "Telegram acknowledged delivery."}
+                ? t.publish.sentMessage(log.message_id)
+                : t.publish.sentDelivered}
             </p>
           ) : (
             <p className="mt-1 text-xs text-destructive/90">
-              {log.error ?? "Telegram rejected the message."}
+              {log.error ?? t.publish.failedFallback}
             </p>
           )}
         </div>

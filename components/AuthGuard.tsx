@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { Spinner } from "@/components/ui/spinner";
+import { t } from "@/lib/i18n";
 
 /**
  * Client-side gate. Waits for AuthBootstrap to finish; if there's no user
@@ -24,7 +25,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (isHydrating || !accessToken || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner size={20} label="Loading workspace…" />
+        <Spinner size={20} label={t.authGuard.loading} />
       </div>
     );
   }

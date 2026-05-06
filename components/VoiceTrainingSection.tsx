@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatRelativeDate } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 const SAMPLES_QUERY_KEY = ["voice-samples"] as const;
 const BRAND_QUERY_KEY = ["brand-context"] as const;
@@ -70,7 +71,7 @@ export function VoiceTrainingSection() {
         errorDetail={
           samplesQuery.error instanceof ApiError
             ? samplesQuery.error.detail
-            : "Could not load voice samples."
+            : t.voice.couldNotLoad
         }
         onRetry={() => samplesQuery.refetch()}
       />
@@ -98,7 +99,7 @@ function SectionHeader({
   const embedded = samples?.filter((s) => s.has_embedding).length ?? 0;
   const lastExtractRaw = brand?.data.voice_extracted_at;
 
-  let lastExtract = "never";
+  let lastExtract = "никогда";
   if (lastExtractRaw) {
     const d = new Date(lastExtractRaw);
     if (!Number.isNaN(d.getTime())) {
@@ -110,19 +111,30 @@ function SectionHeader({
     <div className="space-y-1">
       <div className="flex items-center gap-2">
         <Mic className="h-5 w-5 text-muted-foreground" />
-        <h2 className="text-xl font-semibold tracking-tight">Voice training</h2>
+        <h2 className="text-xl font-semibold tracking-tight">
+          Обучение голоса
+        </h2>
       </div>
       {loading ? (
         <Skeleton className="h-4 w-72" />
       ) : (
         <p className="text-sm text-muted-foreground">
-          {total} voice {total === 1 ? "sample" : "samples"} loaded.{" "}
-          {embedded} {embedded === 1 ? "has" : "have"} embeddings. Last
-          extract: {lastExtract}.
+          Загружено {total} образц{plural3(total, "ов", "а", "ов")}. С эмбеддингами:{" "}
+          {embedded}. Последний разбор: {lastExtract}.
         </p>
       )}
     </div>
   );
+}
+
+function plural3(n: number, many: string, few: string, oneMany: string): string {
+  void oneMany;
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last === 1) return "";
+  if (last >= 2 && last <= 4) return few;
+  return many;
 }
 
 // -------------------- Add samples --------------------
@@ -135,10 +147,10 @@ function AddSamplesCard() {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h3 className="text-base font-medium text-foreground">
-            Add samples
+            Добавить образцы
           </h3>
           <p className="text-xs text-muted-foreground">
-            Paste a batch of your best posts, or add one at a time.
+            Вставь сразу пачку своих лучших постов или добавляй по одному.
           </p>
         </div>
         <div className="inline-flex rounded-md border border-border bg-background/40 p-0.5 text-xs">
@@ -152,7 +164,7 @@ function AddSamplesCard() {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Paste posts
+            Вставить пачку
           </button>
           <button
             type="button"
@@ -164,7 +176,7 @@ function AddSamplesCard() {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Single post
+            Один пост
           </button>
         </div>
       </div>
@@ -185,20 +197,20 @@ function PasteForm() {
       bulkCreateVoiceSamples(samples),
     onSuccess: (result) => {
       toast.success(
-        `Created ${result.created} · Skipped ${result.skipped}`,
+        `Создано ${result.created} · Пропущено ${result.skipped}`,
       );
       qc.invalidateQueries({ queryKey: SAMPLES_QUERY_KEY });
       setText("");
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not save samples",
+        err instanceof ApiError ? err.detail : t.voice.couldNotSaveSamples,
       ),
   });
 
   const splitPreview = React.useMemo(() => {
     return splitPosts(text, separator).filter(
-      (t) => t.length >= MIN_SAMPLE_CHARS,
+      (piece) => piece.length >= MIN_SAMPLE_CHARS,
     );
   }, [text, separator]);
 
@@ -206,7 +218,7 @@ function PasteForm() {
     e.preventDefault();
     if (splitPreview.length === 0) {
       toast.error(
-        `Need at least one post of ${MIN_SAMPLE_CHARS}+ characters.`,
+        `Нужен хотя бы один пост от ${MIN_SAMPLE_CHARS} символов.`,
       );
       return;
     }
@@ -222,24 +234,23 @@ function PasteForm() {
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
         <div className="space-y-1.5">
-          <Label htmlFor="paste-text">Posts</Label>
+          <Label htmlFor="paste-text">Посты</Label>
           <Textarea
             id="paste-text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={10}
-            placeholder={`Post one\n\n---\n\nPost two\n\n---\n\nPost three`}
+            placeholder={`Пост 1\n\n---\n\nПост 2\n\n---\n\nПост 3`}
             disabled={mutation.isPending}
           />
           <p className="text-xs text-muted-foreground">
-            {splitPreview.length} valid{" "}
-            {splitPreview.length === 1 ? "post" : "posts"} detected. Pieces
-            shorter than {MIN_SAMPLE_CHARS} characters are dropped.
+            Найдено корректных постов: {splitPreview.length}. Куски короче{" "}
+            {MIN_SAMPLE_CHARS} символов отбрасываются.
           </p>
         </div>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="paste-platform">Default platform</Label>
+            <Label htmlFor="paste-platform">Платформа по умолчанию</Label>
             <Input
               id="paste-platform"
               value={platform}
@@ -249,7 +260,7 @@ function PasteForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="paste-separator">Separator</Label>
+            <Label htmlFor="paste-separator">Разделитель</Label>
             <Input
               id="paste-separator"
               value={separator}
@@ -269,12 +280,12 @@ function PasteForm() {
         >
           {mutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t.common.saving}
             </>
           ) : (
             <>
-              <Plus className="h-4 w-4" /> Add {splitPreview.length || ""}{" "}
-              {splitPreview.length === 1 ? "sample" : "samples"}
+              <Plus className="h-4 w-4" /> Добавить{" "}
+              {splitPreview.length || ""}
             </>
           )}
         </Button>
@@ -291,13 +302,13 @@ function SingleForm() {
   const mutation = useMutation({
     mutationFn: (input: VoiceSampleCreate) => createVoiceSample(input),
     onSuccess: () => {
-      toast.success("Sample added");
+      toast.success("Образец добавлен");
       qc.invalidateQueries({ queryKey: SAMPLES_QUERY_KEY });
       setText("");
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not save sample",
+        err instanceof ApiError ? err.detail : t.voice.couldNotSaveSample,
       ),
   });
 
@@ -307,7 +318,7 @@ function SingleForm() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (trimmed.length < MIN_SAMPLE_CHARS) {
-      toast.error(`Sample must be at least ${MIN_SAMPLE_CHARS} characters.`);
+      toast.error(`Минимум ${MIN_SAMPLE_CHARS} символов в образце.`);
       return;
     }
     const trimmedPlatform = platform.trim();
@@ -321,24 +332,24 @@ function SingleForm() {
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
         <div className="space-y-1.5">
-          <Label htmlFor="single-text">Text</Label>
+          <Label htmlFor="single-text">Текст</Label>
           <Textarea
             id="single-text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={6}
-            placeholder="One of your favorite posts…"
+            placeholder="Один из твоих любимых постов…"
             disabled={mutation.isPending}
             aria-invalid={tooShort}
           />
           {tooShort && (
             <p className="text-xs text-destructive">
-              Need {MIN_SAMPLE_CHARS - trimmed.length} more characters.
+              Нужно ещё {MIN_SAMPLE_CHARS - trimmed.length} символов.
             </p>
           )}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="single-platform">Platform</Label>
+          <Label htmlFor="single-platform">Платформа</Label>
           <Input
             id="single-platform"
             value={platform}
@@ -355,11 +366,11 @@ function SingleForm() {
         >
           {mutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t.common.saving}
             </>
           ) : (
             <>
-              <Plus className="h-4 w-4" /> Add sample
+              <Plus className="h-4 w-4" /> Добавить образец
             </>
           )}
         </Button>
@@ -387,9 +398,9 @@ function SamplesListCard({
     <div className="space-y-3 rounded-2xl border border-border bg-card/40 p-5">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h3 className="text-base font-medium text-foreground">Samples</h3>
+          <h3 className="text-base font-medium text-foreground">Образцы</h3>
           <p className="text-xs text-muted-foreground">
-            Ordered most recent first. Embeddings populate asynchronously.
+            От новых к старым. Эмбеддинги считаются асинхронно.
           </p>
         </div>
       </div>
@@ -406,10 +417,10 @@ function SamplesListCard({
             <Mic className="h-5 w-5" />
           </div>
           <h3 className="text-sm font-medium text-foreground">
-            No samples yet
+            Образцов пока нет
           </h3>
           <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-            Paste a few of your best posts above to seed your voice.
+            Вставь несколько лучших постов сверху, чтобы заложить голос.
           </p>
         </div>
       )}
@@ -425,12 +436,12 @@ function SamplesTable({ samples }: { samples: VoiceSampleOut[] }) {
     mutationFn: (id: string) => deleteVoiceSample(id),
     onMutate: (id) => setPendingId(id),
     onSuccess: () => {
-      toast.success("Sample deleted");
+      toast.success("Образец удалён");
       qc.invalidateQueries({ queryKey: SAMPLES_QUERY_KEY });
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not delete sample",
+        err instanceof ApiError ? err.detail : t.voice.couldNotDeleteSample,
       ),
     onSettled: () => setPendingId(null),
   });
@@ -440,10 +451,10 @@ function SamplesTable({ samples }: { samples: VoiceSampleOut[] }) {
       <table className="w-full text-sm">
         <thead className="border-b border-border bg-card/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
-            <th className="px-4 py-2 font-medium">Platform</th>
-            <th className="px-4 py-2 font-medium">Text</th>
-            <th className="px-4 py-2 font-medium">Embedding</th>
-            <th className="px-4 py-2 font-medium">Added</th>
+            <th className="px-4 py-2 font-medium">Платформа</th>
+            <th className="px-4 py-2 font-medium">Текст</th>
+            <th className="px-4 py-2 font-medium">Эмбеддинг</th>
+            <th className="px-4 py-2 font-medium">Добавлено</th>
             <th className="px-4 py-2" />
           </tr>
         </thead>
@@ -477,7 +488,7 @@ function SamplesTable({ samples }: { samples: VoiceSampleOut[] }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label="Delete sample"
+                  aria-label="Удалить образец"
                   disabled={pendingId === s.id}
                   onClick={() => deleteMutation.mutate(s.id)}
                 >
@@ -505,7 +516,7 @@ function EmbeddingPill({ ready }: { ready: boolean }) {
           ? "bg-emerald-500/15 text-emerald-300"
           : "bg-muted/60 text-muted-foreground",
       )}
-      title={ready ? "Embedding ready" : "Embedding pending"}
+      title={ready ? "Эмбеддинг готов" : "Эмбеддинг считается"}
     >
       <span
         className={cn(
@@ -513,7 +524,7 @@ function EmbeddingPill({ ready }: { ready: boolean }) {
           ready ? "bg-emerald-400" : "bg-muted-foreground/60",
         )}
       />
-      {ready ? "Ready" : "Pending"}
+      {ready ? t.voice.ready : t.voice.pending}
     </span>
   );
 }
@@ -550,7 +561,7 @@ function ExtractTraitsCard({
       toast.error(
         err instanceof ApiError
           ? err.detail
-          : "Could not extract voice traits",
+          : t.voice.couldNotExtractTraits,
       ),
   });
 
@@ -581,12 +592,12 @@ function ExtractTraitsCard({
           <div className="flex items-center gap-2">
             <Wand2 className="h-4 w-4 text-primary" />
             <h3 className="text-base font-medium text-foreground">
-              Extract traits
+              Разобрать черты
             </h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            Analyze the loaded samples and extract your voice traits. Saved
-            into your Brand Context.
+            Проанализируем загруженные образцы и вытащим черты голоса. Сохраним
+            в твой Бренд-контекст.
           </p>
         </div>
         <Button
@@ -594,17 +605,17 @@ function ExtractTraitsCard({
           disabled={disabled}
           title={
             samplesTotal < MIN_SAMPLES_FOR_EXTRACT
-              ? `Need at least ${MIN_SAMPLES_FOR_EXTRACT} samples`
+              ? `Нужно минимум ${MIN_SAMPLES_FOR_EXTRACT} образца`
               : undefined
           }
         >
           {mutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Analyzing…
+              <Loader2 className="h-4 w-4 animate-spin" /> Анализирую…
             </>
           ) : (
             <>
-              <Sparkles className="h-4 w-4" /> Run analysis
+              <Sparkles className="h-4 w-4" /> Запустить разбор
             </>
           )}
         </Button>
@@ -612,7 +623,7 @@ function ExtractTraitsCard({
 
       {samplesTotal < MIN_SAMPLES_FOR_EXTRACT && (
         <p className="text-xs text-muted-foreground">
-          Need at least {MIN_SAMPLES_FOR_EXTRACT} samples ({samplesTotal}/
+          Нужно минимум {MIN_SAMPLES_FOR_EXTRACT} образца ({samplesTotal}/
           {MIN_SAMPLES_FOR_EXTRACT}).
         </p>
       )}
@@ -624,7 +635,7 @@ function ExtractTraitsCard({
         >
           {mutation.error instanceof ApiError
             ? mutation.error.detail
-            : "Could not extract voice traits."}
+            : t.voice.couldNotExtractTraits}
         </div>
       )}
 
@@ -658,32 +669,31 @@ function ExtractedTraitsPanel({
       {showFreshBanner && (
         <div className="flex items-center gap-2 text-xs text-emerald-300">
           <Sparkles className="h-3.5 w-3.5" />
-          Analyzed {data.samples_analyzed}{" "}
-          {data.samples_analyzed === 1 ? "sample" : "samples"}.
+          Проанализировано образцов: {data.samples_analyzed}.
         </div>
       )}
 
-      <TraitsBlock title="Voice traits" empty="No traits yet.">
+      <TraitsBlock title="Черты голоса" empty="Черт пока нет.">
         {data.voice_traits.length > 0 && (
           <ul className="ml-4 list-disc space-y-1 text-sm text-foreground">
-            {data.voice_traits.map((t, i) => (
-              <li key={`trait-${i}`}>{t}</li>
+            {data.voice_traits.map((trait, i) => (
+              <li key={`trait-${i}`}>{trait}</li>
             ))}
           </ul>
         )}
       </TraitsBlock>
 
-      <TraitsBlock title="Voice avoid" empty="Nothing flagged yet.">
+      <TraitsBlock title="Что избегать" empty="Пока ничего не отмечено.">
         {data.voice_avoid.length > 0 && (
           <ul className="ml-4 list-disc space-y-1 text-sm text-foreground">
-            {data.voice_avoid.map((t, i) => (
-              <li key={`avoid-${i}`}>{t}</li>
+            {data.voice_avoid.map((avoid, i) => (
+              <li key={`avoid-${i}`}>{avoid}</li>
             ))}
           </ul>
         )}
       </TraitsBlock>
 
-      <TraitsBlock title="Recurring phrases" empty="No phrases detected yet.">
+      <TraitsBlock title="Повторяющиеся фразы" empty="Фраз пока не обнаружено.">
         {data.recurring_phrases.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {data.recurring_phrases.map((p, i) => (
@@ -698,7 +708,7 @@ function ExtractedTraitsPanel({
         )}
       </TraitsBlock>
 
-      <TraitsBlock title="Tone calibration" empty="Not calibrated yet.">
+      <TraitsBlock title="Калибровка тона" empty="Ещё не откалибровано.">
         {data.tone_calibration && (
           <p className="text-sm italic text-muted-foreground">
             {data.tone_calibration}
@@ -707,13 +717,13 @@ function ExtractedTraitsPanel({
       </TraitsBlock>
 
       <p className="text-xs text-muted-foreground">
-        These have been saved to your Brand Context.{" "}
+        Сохранено в Бренд-контекст.{" "}
         <a
           href="#brand-context-section"
           onClick={scrollToBrandContext}
           className="text-primary underline-offset-4 hover:underline"
         >
-          Scroll up
+          Прокрутить наверх
         </a>
         .
       </p>
@@ -793,14 +803,14 @@ function ErrorBlock({
         </div>
         <div>
           <h3 className="text-sm font-medium text-foreground">
-            Couldn&apos;t load samples
+            Не удалось загрузить образцы
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
         </div>
       </div>
       <div className="mt-4">
         <Button onClick={onRetry} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4" /> Retry
+          <RefreshCw className="h-4 w-4" /> {t.dash.retry}
         </Button>
       </div>
     </div>

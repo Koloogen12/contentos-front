@@ -43,12 +43,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 const QUERY_KEY = ["telegram-targets"] as const;
 
 const schema = z.object({
-  title: z.string().min(1, "Required").max(255),
-  chat_id: z.string().min(1, "Required").max(255),
+  title: z.string().min(1, "Обязательно").max(255),
+  chat_id: z.string().min(1, "Обязательно").max(255),
   bot_token: z.string().optional(),
   is_default: z.boolean().optional(),
 });
@@ -71,14 +72,14 @@ export function TelegramTargetsSection() {
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">
-            Telegram targets
+            Telegram-адресаты
           </h2>
           <p className="text-sm text-muted-foreground">
-            Channels and chats Format nodes can publish to.
+            Каналы и чаты, куда можно публиковать из Format-нод.
           </p>
         </div>
         <Button onClick={() => setCreating(true)} size="sm">
-          <Plus className="h-4 w-4" /> Add target
+          <Plus className="h-4 w-4" /> {t.telegram.addBtn}
         </Button>
       </div>
 
@@ -89,7 +90,7 @@ export function TelegramTargetsSection() {
           detail={
             query.error instanceof ApiError
               ? query.error.detail
-              : "Could not load Telegram targets."
+              : t.telegram.couldNotLoad
           }
           onRetry={() => query.refetch()}
         />
@@ -105,11 +106,11 @@ export function TelegramTargetsSection() {
             <Send className="h-5 w-5" />
           </div>
           <h3 className="text-sm font-medium text-foreground">
-            No targets yet
+            Адресатов пока нет
           </h3>
           <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-            Add a Telegram channel or chat so you can publish posts straight
-            from the canvas.
+            Добавь Telegram-канал или чат, чтобы публиковать посты прямо с
+            канваса.
           </p>
           <Button
             onClick={() => setCreating(true)}
@@ -117,7 +118,7 @@ export function TelegramTargetsSection() {
             variant="outline"
             className="mt-4"
           >
-            <Plus className="h-4 w-4" /> Add target
+            <Plus className="h-4 w-4" /> {t.telegram.addBtn}
           </Button>
         </div>
       )}
@@ -159,47 +160,47 @@ function TargetsTable({
       <table className="w-full text-sm">
         <thead className="border-b border-border bg-card/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
-            <th className="px-4 py-2 font-medium">Title</th>
+            <th className="px-4 py-2 font-medium">Название</th>
             <th className="px-4 py-2 font-medium">Chat ID</th>
             <th className="px-4 py-2" />
           </tr>
         </thead>
         <tbody>
-          {targets.map((t) => (
+          {targets.map((tg) => (
             <tr
-              key={t.id}
+              key={tg.id}
               className="border-t border-border/60 first:border-t-0"
             >
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-foreground">
-                    {t.title}
+                    {tg.title}
                   </span>
-                  {t.is_default && (
+                  {tg.is_default && (
                     <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                      Default
+                      По умолчанию
                     </span>
                   )}
                 </div>
               </td>
               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                {t.chat_id}
+                {tg.chat_id}
               </td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => onEdit(t)}
-                    aria-label={`Edit ${t.title}`}
+                    onClick={() => onEdit(tg)}
+                    aria-label={`Редактировать ${tg.title}`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => onDelete(t)}
-                    aria-label={`Delete ${t.title}`}
+                    onClick={() => onDelete(tg)}
+                    aria-label={`Удалить ${tg.title}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -257,12 +258,12 @@ function TargetFormDialog({
     mutationFn: (input: TelegramTargetCreate) => createTarget(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEY });
-      toast.success("Target added");
+      toast.success("Адресат добавлен");
       onOpenChange(false);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not add target",
+        err instanceof ApiError ? err.detail : t.telegram.couldNotAdd,
       ),
   });
 
@@ -271,12 +272,12 @@ function TargetFormDialog({
       updateTarget(input.id, input.patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEY });
-      toast.success("Target updated");
+      toast.success("Адресат обновлён");
       onOpenChange(false);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not update target",
+        err instanceof ApiError ? err.detail : t.telegram.couldNotUpdate,
       ),
   });
 
@@ -323,19 +324,19 @@ function TargetFormDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "Add Telegram target" : "Edit Telegram target"}
+            {mode === "create" ? t.telegram.addTitle : t.telegram.editTitle}
           </DialogTitle>
           <DialogDescription>
-            The bot needs admin rights in the destination channel/chat to post.
+            Боту нужны права админа в канале/чате для публикации.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="tg-title">Title</Label>
+            <Label htmlFor="tg-title">Название</Label>
             <Input
               id="tg-title"
               autoFocus
-              placeholder="Personal channel"
+              placeholder="Личный канал"
               {...register("title")}
               aria-invalid={!!errors.title}
             />
@@ -349,13 +350,13 @@ function TargetFormDialog({
             <Label htmlFor="tg-chat-id">Chat ID</Label>
             <Input
               id="tg-chat-id"
-              placeholder="@yourchannel or -1001234567890"
+              placeholder="@yourchannel или -1001234567890"
               {...register("chat_id")}
               aria-invalid={!!errors.chat_id}
             />
             <p className="text-xs text-muted-foreground">
-              Use @username for public channels, or the numeric ID (starts
-              with <code>-100…</code>) for private ones.
+              Для публичных каналов — @username. Для приватных — числовой ID
+              (начинается с <code>-100…</code>).
             </p>
             {errors.chat_id && (
               <p className="text-xs text-destructive">
@@ -365,16 +366,18 @@ function TargetFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tg-bot-token">
-              Bot token{" "}
-              <span className="text-muted-foreground">(optional)</span>
+              Bot-токен{" "}
+              <span className="text-muted-foreground">
+                {t.createCanvas.descriptionOptional}
+              </span>
             </Label>
             <Input
               id="tg-bot-token"
               type="password"
               placeholder={
                 mode === "edit"
-                  ? "Leave blank to keep the current token"
-                  : "Leave blank to use the platform default"
+                  ? "Оставь пустым, чтобы сохранить текущий токен"
+                  : "Оставь пустым, чтобы использовать токен по умолчанию"
               }
               autoComplete="off"
               {...register("bot_token")}
@@ -387,7 +390,7 @@ function TargetFormDialog({
               checked={isDefault}
               onChange={(e) => setValue("is_default", e.target.checked)}
             />
-            Set as default
+            Сделать по умолчанию
           </label>
           <DialogFooter>
             <Button
@@ -396,17 +399,18 @@ function TargetFormDialog({
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {t.common.saving}
                 </>
               ) : mode === "create" ? (
-                "Add target"
+                t.telegram.addBtn
               ) : (
-                "Save changes"
+                "Сохранить изменения"
               )}
             </Button>
           </DialogFooter>
@@ -428,12 +432,12 @@ function DeleteTargetDialog({
     mutationFn: (id: string) => deleteTarget(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEY });
-      toast.success("Target deleted");
+      toast.success("Адресат удалён");
       onOpenChange(false);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not delete target",
+        err instanceof ApiError ? err.detail : t.telegram.couldNotDelete,
       ),
   });
 
@@ -447,10 +451,9 @@ function DeleteTargetDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete target?</DialogTitle>
+          <DialogTitle>Удалить адресата?</DialogTitle>
           <DialogDescription>
-            &ldquo;{target?.title}&rdquo; will be removed. Past publish logs
-            stay intact.
+            «{target?.title}» будет удалён. Прошлые логи публикаций сохранятся.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -459,7 +462,7 @@ function DeleteTargetDialog({
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             variant="destructive"
@@ -468,10 +471,11 @@ function DeleteTargetDialog({
           >
             {mutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+                <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                {t.common.deleting}
               </>
             ) : (
-              "Delete"
+              t.common.delete
             )}
           </Button>
         </DialogFooter>
@@ -504,14 +508,14 @@ function ErrorBlock({
         </div>
         <div>
           <h3 className="text-sm font-medium text-foreground">
-            Couldn&apos;t load targets
+            Не удалось загрузить адресатов
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
         </div>
       </div>
       <div className="mt-4">
         <Button onClick={onRetry} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4" /> Retry
+          <RefreshCw className="h-4 w-4" /> {t.dash.retry}
         </Button>
       </div>
     </div>

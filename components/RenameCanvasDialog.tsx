@@ -20,12 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 const schema = z.object({
   name: z
     .string()
-    .min(1, "Name is required")
-    .max(255, "Maximum 255 characters"),
+    .min(1, t.createCanvas.nameRequired)
+    .max(255, t.createCanvas.nameTooLong),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -81,14 +82,16 @@ export function RenameCanvasDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename canvas</DialogTitle>
+          <DialogTitle>{t.renameCanvas.title}</DialogTitle>
           <DialogDescription>
-            Choose a clearer name for &ldquo;{canvas?.name}&rdquo;.
+            {t.renameCanvas.sub(canvas?.name ?? "")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="rename-canvas-name">Name</Label>
+            <Label htmlFor="rename-canvas-name">
+              {t.createCanvas.nameLabel}
+            </Label>
             <Input
               id="rename-canvas-name"
               autoFocus
@@ -106,7 +109,7 @@ export function RenameCanvasDialog({
             >
               {mutation.error instanceof ApiError
                 ? mutation.error.detail
-                : "Could not rename canvas."}
+                : t.renameCanvas.couldNotRename}
             </div>
           )}
           <DialogFooter>
@@ -116,15 +119,16 @@ export function RenameCanvasDialog({
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {t.common.saving}
                 </>
               ) : (
-                "Save"
+                t.common.save
               )}
             </Button>
           </DialogFooter>

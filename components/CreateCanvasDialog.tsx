@@ -25,12 +25,13 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { TemplatesPickerDialog } from "@/components/canvas/TemplatesPickerDialog";
+import { t } from "@/lib/i18n";
 
 const schema = z.object({
   name: z
     .string()
-    .min(1, "Name is required")
-    .max(255, "Maximum 255 characters"),
+    .min(1, t.createCanvas.nameRequired)
+    .max(255, t.createCanvas.nameTooLong),
   description: z.string().max(2000).optional(),
 });
 
@@ -39,10 +40,38 @@ type FormValues = z.infer<typeof schema>;
 interface CreateCanvasDialogProps {
   /** Pre-selected project id (e.g. when sidebar has a project filter active). */
   defaultProjectId?: string | null;
+  /** Optional controlled open state. When set, parent owns visibility. */
+  open?: boolean;
+  /** Required when `open` is set: open-state setter. */
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Custom trigger element. When omitted (and uncontrolled), falls back
+   * to the default "+ Новый канвас" pill button.
+   */
+  trigger?: React.ReactNode;
+  /** When true, hides the default trigger entirely. Used when parent
+   * fully controls the dialog (e.g. NewCanvasTile). */
+  hideTrigger?: boolean;
 }
 
-export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps = {}) {
-  const [open, setOpen] = React.useState(false);
+export function CreateCanvasDialog({
+  defaultProjectId,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  trigger,
+  hideTrigger,
+}: CreateCanvasDialogProps = {}) {
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const open = isControlled ? !!controlledOpen : internalOpen;
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      if (isControlled) controlledOnOpenChange?.(next);
+      else setInternalOpen(next);
+    },
+    [isControlled, controlledOnOpenChange],
+  );
+
   const [templatesOpen, setTemplatesOpen] = React.useState(false);
   const [projectId, setProjectId] = React.useState<string | null>(
     defaultProjectId ?? null,
@@ -99,24 +128,26 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
           }
         }}
       >
-        <DialogTrigger asChild>
-          <Button>
-            <Plus className="h-4 w-4" /> New canvas
-          </Button>
-        </DialogTrigger>
+        {!hideTrigger && (
+          <DialogTrigger asChild>
+            {trigger ?? (
+              <Button>
+                <Plus className="h-4 w-4" /> {t.dash.newCanvas}
+              </Button>
+            )}
+          </DialogTrigger>
+        )}
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New canvas</DialogTitle>
-            <DialogDescription>
-              Give your canvas a name. You can rename it later.
-            </DialogDescription>
+            <DialogTitle>{t.createCanvas.title}</DialogTitle>
+            <DialogDescription>{t.createCanvas.sub}</DialogDescription>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="canvas-name">Name</Label>
+              <Label htmlFor="canvas-name">{t.createCanvas.nameLabel}</Label>
               <Input
                 id="canvas-name"
-                placeholder="Week 20 — research drop"
+                placeholder={t.createCanvas.namePlaceholder}
                 autoFocus
                 {...register("name")}
                 aria-invalid={!!errors.name}
@@ -127,20 +158,24 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
             </div>
             <div className="space-y-2">
               <Label htmlFor="canvas-description">
-                Description{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                {t.createCanvas.descriptionLabel}{" "}
+                <span className="text-muted-foreground">
+                  {t.createCanvas.descriptionOptional}
+                </span>
               </Label>
               <Textarea
                 id="canvas-description"
-                placeholder="What's this canvas for?"
+                placeholder={t.createCanvas.descriptionPlaceholder}
                 rows={3}
                 {...register("description")}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="canvas-project">
-                Project{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                {t.createCanvas.projectLabel}{" "}
+                <span className="text-muted-foreground">
+                  {t.createCanvas.projectOptional}
+                </span>
               </Label>
               <select
                 id="canvas-project"
@@ -151,7 +186,7 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 )}
               >
-                <option value="">— No project —</option>
+                <option value="">{t.createCanvas.projectNone}</option>
                 {(projectsQuery.data ?? []).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -169,7 +204,7 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
               className="inline-flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline"
             >
               <CornerDownRight className="h-3 w-3" />
-              Start from template
+              {t.createCanvas.fromTemplate}
             </button>
 
             {mutation.error && (
@@ -179,7 +214,7 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
               >
                 {mutation.error instanceof ApiError
                   ? mutation.error.detail
-                  : "Could not create canvas. Please try again."}
+                  : t.createCanvas.couldNotCreate}
               </div>
             )}
             <DialogFooter>
@@ -189,15 +224,16 @@ export function CreateCanvasDialog({ defaultProjectId }: CreateCanvasDialogProps
                 onClick={() => setOpen(false)}
                 disabled={mutation.isPending}
               >
-                Cancel
+                {t.common.cancel}
               </Button>
               <Button type="submit" disabled={mutation.isPending}>
                 {mutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Creating…
+                    <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                    {t.createCanvas.submitting}
                   </>
                 ) : (
-                  "Create canvas"
+                  t.createCanvas.submit
                 )}
               </Button>
             </DialogFooter>

@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 interface DeleteCanvasDialogProps {
   canvas: CanvasOut | null;
@@ -53,10 +54,9 @@ export function DeleteCanvasDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete canvas?</DialogTitle>
+          <DialogTitle>{t.deleteCanvas.title}</DialogTitle>
           <DialogDescription>
-            &ldquo;{canvas?.name}&rdquo; and all of its nodes will be removed.
-            This action cannot be undone.
+            {t.deleteCanvas.sub(canvas?.name ?? "")}
           </DialogDescription>
         </DialogHeader>
         {mutation.error && (
@@ -66,7 +66,7 @@ export function DeleteCanvasDialog({
           >
             {mutation.error instanceof ApiError
               ? mutation.error.detail
-              : "Could not delete canvas."}
+              : t.deleteCanvas.couldNotDelete}
           </div>
         )}
         <DialogFooter>
@@ -76,7 +76,7 @@ export function DeleteCanvasDialog({
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             type="button"
@@ -86,10 +86,11 @@ export function DeleteCanvasDialog({
           >
             {mutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+                <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                {t.common.deleting}
               </>
             ) : (
-              "Delete canvas"
+              t.deleteCanvas.submit
             )}
           </Button>
         </DialogFooter>

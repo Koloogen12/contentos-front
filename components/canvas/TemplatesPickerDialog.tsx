@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface TemplatesPickerDialogProps {
   open: boolean;
@@ -48,8 +49,8 @@ interface TemplatePreview {
  * shallow template list gives us (name + description) plus a prompt to
  * inspect.
  */
-function describeTemplate(t: CanvasOut): string {
-  return t.description?.trim() || "Reusable pipeline";
+function describeTemplate(tpl: CanvasOut): string {
+  return tpl.description?.trim() || "Готовый пайплайн";
 }
 
 export function TemplatesPickerDialog({
@@ -104,7 +105,7 @@ export function TemplatesPickerDialog({
       toast.error(
         err instanceof ApiError
           ? err.detail
-          : "Could not create canvas from template",
+          : t.templates.couldNotCreate,
       ),
   });
 
@@ -121,11 +122,11 @@ export function TemplatesPickerDialog({
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{title ?? "Templates"}</DialogTitle>
+          <DialogTitle>{title ?? t.templates.title}</DialogTitle>
           <DialogDescription>
             {selected
-              ? "Name your new canvas and choose where it lives."
-              : "Pick a starting pipeline. You can edit, save, and clone after."}
+              ? "Назови новый канвас и выбери, где он будет жить."
+              : t.templates.sub}
           </DialogDescription>
         </DialogHeader>
 
@@ -147,21 +148,21 @@ export function TemplatesPickerDialog({
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-3 text-xs text-destructive">
             {templatesQuery.error instanceof ApiError
               ? templatesQuery.error.detail
-              : "Could not load templates."}
+              : t.templates.couldNotLoad}
           </div>
         ) : !templatesQuery.data || templatesQuery.data.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
             <LibraryBig className="mx-auto mb-3 h-6 w-6" />
-            <p>No templates yet.</p>
+            <p>{t.dashboard.noTemplates}</p>
             <p className="mt-1 text-xs">
-              Save a canvas as a template from its menu.
+              Сохрани канвас как шаблон из его меню.
             </p>
           </div>
         ) : (
           <ul className="grid max-h-[60vh] grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
-            {templatesQuery.data.map((t) => (
-              <li key={t.id}>
-                <TemplateCard template={t} onPick={() => setSelected(t)} />
+            {templatesQuery.data.map((tpl) => (
+              <li key={tpl.id}>
+                <TemplateCard template={tpl} onPick={() => setSelected(tpl)} />
               </li>
             ))}
           </ul>
@@ -170,7 +171,7 @@ export function TemplatesPickerDialog({
         {!selected && (
           <DialogFooter>
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Close
+              {t.common.close}
             </Button>
           </DialogFooter>
         )}
@@ -233,8 +234,7 @@ function TemplateCard({
         ) : (
           <>
             <span className="rounded-full border border-border bg-background/60 px-2 py-0.5 text-[10px] text-muted-foreground">
-              {preview.nodeCount}{" "}
-              {preview.nodeCount === 1 ? "node" : "nodes"}
+              {t.dash.nodes(preview.nodeCount)}
             </span>
             {preview.platforms.map((p) => (
               <span
@@ -300,7 +300,7 @@ function FromTemplateForm({
     >
       <div className="rounded-lg border border-border bg-card/40 p-3">
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Template
+          {t.canvas.template}
         </div>
         <div className="mt-0.5 text-sm font-medium text-foreground">
           {template.name}
@@ -312,7 +312,7 @@ function FromTemplateForm({
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="from-template-name">Canvas name</Label>
+        <Label htmlFor="from-template-name">{t.publicView.cloneNameLabel}</Label>
         <Input
           id="from-template-name"
           value={name}
@@ -321,12 +321,15 @@ function FromTemplateForm({
           autoFocus
         />
         <p className="text-[11px] text-muted-foreground">
-          Defaults to the template name.
+          По умолчанию используется название шаблона.
         </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="from-template-project">
-          Project <span className="text-muted-foreground">(optional)</span>
+          {t.createCanvas.projectLabel}{" "}
+          <span className="text-muted-foreground">
+            {t.createCanvas.projectOptional}
+          </span>
         </Label>
         <select
           id="from-template-project"
@@ -337,7 +340,7 @@ function FromTemplateForm({
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           )}
         >
-          <option value="">— No project —</option>
+          <option value="">{t.createCanvas.projectNone}</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -352,15 +355,15 @@ function FromTemplateForm({
           onClick={onBack}
           disabled={submitting}
         >
-          Back
+          Назад
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Creating…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t.common.creating}
             </>
           ) : (
-            "Create canvas"
+            t.templates.create
           )}
         </Button>
       </DialogFooter>

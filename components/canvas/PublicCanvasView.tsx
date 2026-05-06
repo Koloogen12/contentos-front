@@ -51,6 +51,7 @@ import { CanvasNodeContext } from "./canvasContext";
 import { ExtractNode } from "./nodes/ExtractNode";
 import { FormatNode } from "./nodes/FormatNode";
 import { SourceNode } from "./nodes/SourceNode";
+import { t } from "@/lib/i18n";
 
 interface PublicCanvasViewProps {
   token: string;
@@ -97,7 +98,7 @@ export function PublicCanvasView({ token }: PublicCanvasViewProps) {
   if (query.isPending) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Spinner size={24} label="Loading canvas…" />
+        <Spinner size={24} label={t.publicView.loading} />
       </div>
     );
   }
@@ -113,7 +114,7 @@ export function PublicCanvasView({ token }: PublicCanvasViewProps) {
         detail={
           query.error instanceof ApiError
             ? query.error.detail
-            : "Could not load this canvas."
+            : t.publicView.networkErrFallback
         }
         onRetry={() => query.refetch()}
       />
@@ -307,14 +308,15 @@ function PublicTopBar({
         className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground"
       >
         <Sparkles className="h-4 w-4 text-primary" />
-        ContentOS
+        {t.brandName}
       </Link>
       <div className="min-w-0 flex-1 text-right">
         <div className="line-clamp-1 text-sm font-medium text-foreground">
           {name}
         </div>
         <div className="line-clamp-1 text-[11px] text-muted-foreground">
-          {organizationName} · {createdAtLabel}
+          {t.publicView.title} · {t.publicView.publishedBy(organizationName)} ·{" "}
+          {createdAtLabel}
         </div>
       </div>
     </header>
@@ -349,14 +351,14 @@ function CloneCta({ token, canvasName }: { token: string; canvasName: string }) 
         className="absolute bottom-6 right-6 z-10 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-2xl shadow-primary/30 transition-colors hover:bg-primary/90 disabled:opacity-60"
       >
         <CopyIcon className="h-4 w-4" />
-        Clone into my workspace
+        {accessToken ? t.publicView.cloneCta : t.publicView.loginToClone}
       </button>
       {accessToken && (
         <CloneDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           token={token}
-          defaultName={`${canvasName} (copy)`}
+          defaultName={`${canvasName} ${t.publicView.copySuffix}`}
         />
       )}
     </>
@@ -400,13 +402,13 @@ function CloneDialog({
       }),
     onSuccess: (cloned) => {
       qc.invalidateQueries({ queryKey: ["canvases"] });
-      toast.success("Canvas cloned to your workspace");
+      toast.success(t.publicView.cloneSuccess);
       onOpenChange(false);
       router.push(`/canvas/${cloned.id}`);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not clone canvas",
+        err instanceof ApiError ? err.detail : t.publicView.cloneError,
       ),
   });
 
@@ -414,35 +416,32 @@ function CloneDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Name your copy</DialogTitle>
-          <DialogDescription>
-            We&apos;ll create a fresh copy of this canvas in your workspace.
-            Skill outputs are preserved but reset to idle.
-          </DialogDescription>
+          <DialogTitle>{t.publicView.cloneDialogTitle}</DialogTitle>
+          <DialogDescription>{t.publicView.cloneDialogSub}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="clone-name">Canvas name</Label>
+            <Label htmlFor="clone-name">{t.publicView.cloneNameLabel}</Label>
             <Input
               id="clone-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My copy"
+              placeholder={t.publicView.cloneNamePlaceholder}
               autoFocus
               disabled={cloneMutation.isPending}
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Project</Label>
+            <Label>{t.publicView.cloneProjectLabel}</Label>
             {projectsQuery.isPending ? (
               <p className="text-xs text-muted-foreground">
-                Loading projects…
+                {t.publicView.cloneProjectsLoading}
               </p>
             ) : projectsQuery.isError ? (
               <p className="text-xs text-destructive">
-                Could not load projects.
+                {t.publicView.cloneProjectsError}
               </p>
             ) : (
               <ProjectPicker
@@ -461,7 +460,7 @@ function CloneDialog({
             onClick={() => onOpenChange(false)}
             disabled={cloneMutation.isPending}
           >
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             onClick={() => cloneMutation.mutate()}
@@ -469,11 +468,12 @@ function CloneDialog({
           >
             {cloneMutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Cloning…
+                <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                {t.publicView.cloning}
               </>
             ) : (
               <>
-                <CopyIcon className="h-4 w-4" /> Clone canvas
+                <CopyIcon className="h-4 w-4" /> {t.publicView.cloneSubmit}
               </>
             )}
           </Button>
@@ -506,7 +506,7 @@ function ProjectPicker({
             : "border-border bg-card/40 text-muted-foreground hover:bg-accent"
         } disabled:opacity-50`}
       >
-        No project
+        {t.publicView.cloneNoProject}
       </button>
       {projects.map((p) => (
         <button
@@ -542,11 +542,10 @@ function NotFoundState() {
           <AlertTriangle className="h-6 w-6 text-muted-foreground" />
         </div>
         <h1 className="mt-5 text-lg font-semibold text-foreground">
-          Link not found or revoked
+          {t.publicView.notFoundTitle}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This share link is no longer active. The canvas owner may have
-          revoked it.
+          {t.publicView.notFoundSub}
         </p>
         <div className="mt-6">
           <Link
@@ -554,7 +553,7 @@ function NotFoundState() {
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4" />
-            Go to dashboard
+            {t.publicView.backHome}
           </Link>
         </div>
       </div>
@@ -578,14 +577,14 @@ function NetworkErrorState({
           </div>
           <div>
             <h1 className="text-base font-medium text-foreground">
-              Couldn&apos;t load canvas
+              {t.publicView.networkErrTitle}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
           </div>
         </div>
         <div className="mt-5">
           <Button onClick={onRetry} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4" /> Retry
+            <RefreshCw className="h-4 w-4" /> {t.publicView.retry}
           </Button>
         </div>
       </div>

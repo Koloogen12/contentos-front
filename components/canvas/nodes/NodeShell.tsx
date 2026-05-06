@@ -4,6 +4,7 @@ import * as React from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { NodeStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 const STATUS_BORDER: Record<NodeStatus, string> = {
   idle: "border-[#2a2d33]",
@@ -20,10 +21,10 @@ const STATUS_DOT: Record<NodeStatus, string> = {
 };
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
-  idle: "Idle",
-  running: "Running",
-  done: "Done",
-  error: "Error",
+  idle: t.nodeStatus.idle,
+  running: t.nodeStatus.running,
+  done: t.nodeStatus.done,
+  error: t.nodeStatus.error,
 };
 
 interface NodeShellProps {
@@ -86,7 +87,7 @@ export function NodeShell({
               e.stopPropagation();
               onToggleExpanded();
             }}
-            title={expanded ? "Collapse" : "Expand"}
+            title={expanded ? "Свернуть" : "Развернуть"}
           >
             {expanded ? (
               <Minimize2 className="h-3.5 w-3.5" />

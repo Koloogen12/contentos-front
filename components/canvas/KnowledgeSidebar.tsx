@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 interface KnowledgeSidebarProps {
   selectedNode: NodeOut | null;
@@ -68,13 +69,13 @@ export function KnowledgeSidebar({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">Knowledge</h2>
+          <h2 className="text-sm font-semibold">{t.knowledge.sidebarTitle}</h2>
         </div>
         <button
           type="button"
           onClick={onClose}
           className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Hide sidebar"
+          title={t.knowledge.sidebarHide}
         >
           <X className="h-4 w-4" />
         </button>
@@ -125,11 +126,11 @@ function NodeKnowledgePanel({
     mutationFn: (itemId: string) => attachKnowledgeToNode(node.id, itemId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["node-knowledge", node.id] });
-      toast.success("Attached to node");
+      toast.success(t.knowledge.sidebarAttached1);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not attach item",
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotAttach,
       ),
   });
 
@@ -140,7 +141,7 @@ function NodeKnowledgePanel({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not detach item",
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotDetach,
       ),
   });
 
@@ -167,7 +168,7 @@ function NodeKnowledgePanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-4 py-3">
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Selected node
+          {t.knowledge.sidebarSelectedNode}
         </div>
         <div className="mt-0.5 text-xs font-medium capitalize text-foreground">
           {node.type}
@@ -177,14 +178,14 @@ function NodeKnowledgePanel({
       <div className="border-b border-border px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-xs font-medium text-foreground">
-            Attached ({attachedQuery.data?.length ?? 0})
+            {t.knowledge.sidebarAttached(attachedQuery.data?.length ?? 0)}
           </div>
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
           >
-            <Plus className="h-3 w-3" /> New
+            <Plus className="h-3 w-3" /> {t.knowledge.sidebarNew}
           </button>
         </div>
         {attachedQuery.isPending ? (
@@ -203,8 +204,7 @@ function NodeKnowledgePanel({
           </ul>
         ) : (
           <p className="rounded-md border border-dashed border-border bg-card/40 px-3 py-3 text-[11px] text-muted-foreground">
-            Nothing attached yet. Pick from below to add context to this node&apos;s
-            skill runs.
+            {t.knowledge.sidebarNothingAttached}
           </p>
         )}
       </div>
@@ -213,7 +213,7 @@ function NodeKnowledgePanel({
         <div className="border-b border-border px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-xs font-medium text-foreground">
-              Browse library
+              {t.knowledge.sidebarBrowse}
             </div>
           </div>
           <div className="relative mb-2">
@@ -221,7 +221,7 @@ function NodeKnowledgePanel({
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search title, body, tags…"
+              placeholder={t.knowledge.sidebarSearchPlaceholder}
               className="h-8 pl-7 text-xs"
             />
           </div>
@@ -229,14 +229,14 @@ function NodeKnowledgePanel({
             <TypePill
               active={!typeFilter}
               onClick={() => setTypeFilter("")}
-              label="All"
+              label={t.knowledge.all}
             />
-            {KNOWLEDGE_TYPES.map((t) => (
+            {KNOWLEDGE_TYPES.map((tp) => (
               <TypePill
-                key={t}
-                active={typeFilter === t}
-                onClick={() => setTypeFilter(t)}
-                label={t}
+                key={tp}
+                active={typeFilter === tp}
+                onClick={() => setTypeFilter(tp)}
+                label={t.knowledge.typeFilter[tp]}
               />
             ))}
           </div>
@@ -246,7 +246,7 @@ function NodeKnowledgePanel({
             <KnowledgeListSkeleton count={4} />
           ) : filteredAvailable.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-card/40 px-3 py-3 text-[11px] text-muted-foreground">
-              No matching items.
+              {t.knowledge.sidebarNoMatches}
             </p>
           ) : (
             <ul className="space-y-1.5">
@@ -304,17 +304,19 @@ function OrgBrowsePanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-4 py-3 text-[11px] text-muted-foreground">
-        Select a node to attach knowledge. Browse the org library below.
+        {t.knowledge.sidebarPickToAttach}
       </div>
       <div className="border-b border-border px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-medium text-foreground">Library</div>
+          <div className="text-xs font-medium text-foreground">
+            {t.knowledge.sidebarBrowse}
+          </div>
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
           >
-            <Plus className="h-3 w-3" /> New
+            <Plus className="h-3 w-3" /> {t.knowledge.sidebarNew}
           </button>
         </div>
         <div className="relative mb-2">
@@ -322,7 +324,7 @@ function OrgBrowsePanel({
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title, body, tags…"
+            placeholder={t.knowledge.sidebarSearchPlaceholder}
             className="h-8 pl-7 text-xs"
           />
         </div>
@@ -330,14 +332,14 @@ function OrgBrowsePanel({
           <TypePill
             active={!typeFilter}
             onClick={() => setTypeFilter("")}
-            label="All"
+            label={t.knowledge.all}
           />
-          {KNOWLEDGE_TYPES.map((t) => (
+          {KNOWLEDGE_TYPES.map((tp) => (
             <TypePill
-              key={t}
-              active={typeFilter === t}
-              onClick={() => setTypeFilter(t)}
-              label={t}
+              key={tp}
+              active={typeFilter === tp}
+              onClick={() => setTypeFilter(tp)}
+              label={t.knowledge.typeFilter[tp]}
             />
           ))}
         </div>
@@ -347,7 +349,7 @@ function OrgBrowsePanel({
           <KnowledgeListSkeleton count={4} />
         ) : filtered.length === 0 ? (
           <p className="rounded-md border border-dashed border-border bg-card/40 px-3 py-3 text-[11px] text-muted-foreground">
-            No items yet. Click &ldquo;New&rdquo; to add one.
+            {t.knowledge.sidebarNoItems}
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -431,7 +433,7 @@ function KnowledgeRow({
             disabled={disabled}
             onClick={onDetach}
             className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-            title="Detach"
+            title={t.knowledge.sidebarDetach}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -442,7 +444,7 @@ function KnowledgeRow({
             disabled={disabled}
             onClick={onAttach}
             className="rounded-md p-1 text-primary hover:bg-primary/10 disabled:opacity-50"
-            title="Attach to node"
+            title={t.knowledge.sidebarAttach}
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -472,8 +474,8 @@ function KnowledgeListSkeleton({ count = 3 }: { count?: number }) {
 
 const createSchema = z.object({
   type: z.enum(["tezis", "reference", "audience", "voice_rule", "content_theme"]),
-  title: z.string().min(1, "Title is required").max(500),
-  body: z.string().min(1, "Body is required"),
+  title: z.string().min(1, t.knowledge.titleRequired).max(500),
+  body: z.string().min(1, t.knowledge.bodyRequired),
   tags: z.string().optional(),
 });
 
@@ -506,19 +508,19 @@ function CreateKnowledgeDialog({
         tags: values.tags
           ? values.tags
               .split(",")
-              .map((t) => t.trim())
+              .map((tag) => tag.trim())
               .filter(Boolean)
           : [],
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["knowledge"] });
-      toast.success("Knowledge item created");
+      toast.success(t.knowledge.created);
       reset();
       onOpenChange(false);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not create item",
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotSaveToast,
       ),
   });
 
@@ -537,40 +539,38 @@ function CreateKnowledgeDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New knowledge item</DialogTitle>
-          <DialogDescription>
-            Add a tezis, reference, voice rule, or audience note.
-          </DialogDescription>
+          <DialogTitle>{t.knowledge.createTitle}</DialogTitle>
+          <DialogDescription>{t.knowledge.sidebarCreateSub}</DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="ki-type">Type</Label>
+            <Label htmlFor="ki-type">{t.knowledge.typeLabel}</Label>
             <select
               id="ki-type"
               {...register("type")}
               className="flex h-10 w-full rounded-md border border-input bg-background/40 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              {KNOWLEDGE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {KNOWLEDGE_TYPES.map((tp) => (
+                <option key={tp} value={tp}>
+                  {t.knowledge.typeFilter[tp]}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ki-title">Title</Label>
+            <Label htmlFor="ki-title">{t.knowledge.titleLabel}</Label>
             <Input id="ki-title" autoFocus {...register("title")} />
             {errors.title && (
               <p className="text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ki-body">Body</Label>
+            <Label htmlFor="ki-body">{t.knowledge.bodyLabel}</Label>
             <Textarea
               id="ki-body"
               rows={5}
               {...register("body")}
-              placeholder="The full text of this knowledge item…"
+              placeholder={t.knowledge.bodyPlaceholder}
             />
             {errors.body && (
               <p className="text-xs text-destructive">{errors.body.message}</p>
@@ -578,9 +578,16 @@ function CreateKnowledgeDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ki-tags">
-              Tags <span className="text-muted-foreground">(comma-separated)</span>
+              {t.knowledge.tagsLabel}{" "}
+              <span className="text-muted-foreground">
+                {t.knowledge.tagsHint}
+              </span>
             </Label>
-            <Input id="ki-tags" placeholder="founders, ai, b2b" {...register("tags")} />
+            <Input
+              id="ki-tags"
+              placeholder={t.knowledge.tagsPlaceholder}
+              {...register("tags")}
+            />
           </div>
           {mutation.error && (
             <div
@@ -589,7 +596,7 @@ function CreateKnowledgeDialog({
             >
               {mutation.error instanceof ApiError
                 ? mutation.error.detail
-                : "Could not create knowledge item."}
+                : t.knowledge.couldNotSave}
             </div>
           )}
           <DialogFooter>
@@ -599,16 +606,17 @@ function CreateKnowledgeDialog({
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Creating…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {t.common.creating}
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-4 w-4" /> Create
+                  <Sparkles className="h-4 w-4" /> {t.common.create}
                 </>
               )}
             </Button>

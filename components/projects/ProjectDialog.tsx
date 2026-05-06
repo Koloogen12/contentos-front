@@ -23,12 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 const schema = z.object({
   name: z
     .string()
-    .min(1, "Name is required")
-    .max(255, "Maximum 255 characters"),
+    .min(1, t.createCanvas.nameRequired)
+    .max(255, t.createCanvas.nameTooLong),
   product_description: z.string().max(2000).optional(),
   target_audience: z.string().max(2000).optional(),
   key_themes: z.string().max(2000).optional(),
@@ -128,12 +129,12 @@ export function ProjectDialog({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success(editing ? "Project updated" : "Project created");
+      toast.success(editing ? "Проект обновлён" : "Проект создан");
       onOpenChange(false);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not save project",
+        err instanceof ApiError ? err.detail : t.projects.couldNotSave,
       ),
   });
 
@@ -150,15 +151,15 @@ export function ProjectDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {title ?? (editing ? "Edit project" : "New project")}
+            {title ?? (editing ? t.projects.editTitle : t.projects.newTitle)}
           </DialogTitle>
           <DialogDescription>
-            Group canvases and knowledge under a single brand or initiative.
+            Объедини канвасы и базу знаний под одним брендом или направлением.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="project-name">Name</Label>
+            <Label htmlFor="project-name">{t.createCanvas.nameLabel}</Label>
             <Input
               id="project-name"
               placeholder="THE MONO"
@@ -171,7 +172,7 @@ export function ProjectDialog({
             )}
           </div>
           <div className="space-y-2">
-            <Label>Color</Label>
+            <Label>Цвет</Label>
             <div className="flex flex-wrap gap-2">
               {PROJECT_COLORS.map((c) => (
                 <button
@@ -185,7 +186,7 @@ export function ProjectDialog({
                       : "border-transparent hover:scale-105",
                   )}
                   style={{ backgroundColor: c }}
-                  aria-label={`Pick color ${c}`}
+                  aria-label={`Выбрать цвет ${c}`}
                 />
               ))}
             </div>
@@ -197,7 +198,7 @@ export function ProjectDialog({
               onClick={() => setAdvancedOpen((v) => !v)}
               className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
-              Advanced — describe your product/audience/themes for AI context
+              Расширенно — описание продукта, аудитории и тем для AI-контекста
               {advancedOpen ? (
                 <ChevronUp className="h-3.5 w-3.5" />
               ) : (
@@ -208,50 +209,56 @@ export function ProjectDialog({
               <div className="space-y-3 border-t border-border px-3 py-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="project-product">
-                    Product description{" "}
-                    <span className="text-muted-foreground">(optional)</span>
+                    Описание продукта{" "}
+                    <span className="text-muted-foreground">
+                      {t.createCanvas.descriptionOptional}
+                    </span>
                   </Label>
                   <Textarea
                     id="project-product"
                     rows={2}
-                    placeholder="What's this project building?"
+                    placeholder="Что строит этот проект?"
                     {...register("product_description")}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="project-audience">
-                    Target audience{" "}
-                    <span className="text-muted-foreground">(optional)</span>
+                    Целевая аудитория{" "}
+                    <span className="text-muted-foreground">
+                      {t.createCanvas.descriptionOptional}
+                    </span>
                   </Label>
                   <Textarea
                     id="project-audience"
                     rows={2}
-                    placeholder="Who is the content for?"
+                    placeholder="Для кого контент?"
                     {...register("target_audience")}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="project-themes">
-                    Key themes{" "}
+                    Ключевые темы{" "}
                     <span className="text-muted-foreground">
-                      (comma-separated)
+                      {t.knowledge.tagsHint}
                     </span>
                   </Label>
                   <Input
                     id="project-themes"
-                    placeholder="founders, AI, marketplaces"
+                    placeholder="founders, AI, маркетплейсы"
                     {...register("key_themes")}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="project-tone">
-                    Tone notes{" "}
-                    <span className="text-muted-foreground">(optional)</span>
+                    Заметки по тону{" "}
+                    <span className="text-muted-foreground">
+                      {t.createCanvas.descriptionOptional}
+                    </span>
                   </Label>
                   <Textarea
                     id="project-tone"
                     rows={2}
-                    placeholder="Voice notes specific to this project"
+                    placeholder="Особенности голоса в этом проекте"
                     {...register("tone_notes")}
                   />
                 </div>
@@ -266,7 +273,7 @@ export function ProjectDialog({
             >
               {mutation.error instanceof ApiError
                 ? mutation.error.detail
-                : "Could not save project."}
+                : t.projects.couldNotSave}
             </div>
           )}
           <DialogFooter>
@@ -276,18 +283,18 @@ export function ProjectDialog({
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />{" "}
-                  {editing ? "Saving…" : "Creating…"}
+                  {editing ? t.common.saving : t.common.creating}
                 </>
               ) : editing ? (
-                "Save"
+                t.common.save
               ) : (
-                "Create project"
+                t.projects.create
               )}
             </Button>
           </DialogFooter>

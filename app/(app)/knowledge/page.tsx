@@ -25,7 +25,7 @@ import {
   updateKnowledge,
 } from "@/lib/knowledge";
 import type { KnowledgeItemOut, KnowledgeType } from "@/lib/types";
-import { formatRelativeDate } from "@/lib/utils";
+import { formatRelativeRu, t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,10 @@ const KNOWLEDGE_TYPES: KnowledgeType[] = [
   "voice_rule",
   "content_theme",
 ];
+
+function typeLabel(type: KnowledgeType): string {
+  return t.knowledge.typeFilter[type];
+}
 
 export default function KnowledgePage() {
   const searchParams = useSearchParams();
@@ -84,7 +88,7 @@ export default function KnowledgePage() {
       (i) =>
         i.title.toLowerCase().includes(q) ||
         i.body.toLowerCase().includes(q) ||
-        i.tags.some((t) => t.toLowerCase().includes(q)),
+        i.tags.some((tag) => tag.toLowerCase().includes(q)),
     );
   }, [query.data, search]);
 
@@ -92,14 +96,15 @@ export default function KnowledgePage() {
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Knowledge</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t.knowledge.title}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Tezises, references, audience notes, voice rules — your AI&apos;s
-            memory across canvases.
+            {t.knowledge.sub}
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" /> New item
+          <Plus className="h-4 w-4" /> {t.knowledge.new}
         </Button>
       </div>
 
@@ -109,7 +114,7 @@ export default function KnowledgePage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title, body, tags…"
+            placeholder={t.knowledge.searchPlaceholder}
             className="pl-9"
           />
         </div>
@@ -117,14 +122,14 @@ export default function KnowledgePage() {
           <TypePill
             active={!typeFilter}
             onClick={() => setTypeFilter("")}
-            label="All"
+            label={t.knowledge.all}
           />
-          {KNOWLEDGE_TYPES.map((t) => (
+          {KNOWLEDGE_TYPES.map((tp) => (
             <TypePill
-              key={t}
-              active={typeFilter === t}
-              onClick={() => setTypeFilter(t)}
-              label={t}
+              key={tp}
+              active={typeFilter === tp}
+              onClick={() => setTypeFilter(tp)}
+              label={typeLabel(tp)}
             />
           ))}
         </div>
@@ -138,23 +143,23 @@ export default function KnowledgePage() {
             detail={
               query.error instanceof ApiError
                 ? query.error.detail
-                : "Could not load knowledge."
+                : t.knowledge.couldNotLoadDetail
             }
             onRetry={() => query.refetch()}
           />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<BookOpen className="h-5 w-5" />}
-            title={search ? "No matching items" : "Library is empty"}
+            title={
+              search ? t.knowledge.emptyMatchTitle : t.knowledge.emptyTitle
+            }
             description={
-              search
-                ? "Try different keywords or clear the type filter."
-                : "Add your first tezis, reference, or voice rule."
+              search ? t.knowledge.emptyMatchDesc : t.knowledge.emptyDesc
             }
             action={
               !search ? (
                 <Button onClick={() => setCreateOpen(true)}>
-                  <Plus className="h-4 w-4" /> New item
+                  <Plus className="h-4 w-4" /> {t.knowledge.new}
                 </Button>
               ) : null
             }
@@ -173,16 +178,16 @@ export default function KnowledgePage() {
                         {item.title}
                       </h3>
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        {item.type}
+                        {typeLabel(item.type)}
                       </span>
                       {item.viral_score !== null && (
                         <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                          Score {item.viral_score}
+                          {t.knowledge.score(item.viral_score)}
                         </span>
                       )}
                       {item.is_dormant && (
                         <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-                          Dormant
+                          {t.knowledge.dormant}
                         </span>
                       )}
                     </div>
@@ -191,18 +196,18 @@ export default function KnowledgePage() {
                     </p>
                     {item.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {item.tags.map((t) => (
+                        {item.tags.map((tag) => (
                           <span
-                            key={t}
+                            key={tag}
                             className="rounded-full border border-border bg-card/60 px-2 py-0.5 text-[10px] text-muted-foreground"
                           >
-                            #{t}
+                            #{tag}
                           </span>
                         ))}
                       </div>
                     )}
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      Updated {formatRelativeDate(item.updated_at)}
+                      {t.knowledge.updated(formatRelativeRu(item.updated_at))}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -210,7 +215,7 @@ export default function KnowledgePage() {
                       type="button"
                       onClick={() => setEditTarget(item)}
                       className="rounded-md border border-border bg-background/60 p-1.5 text-muted-foreground hover:text-foreground"
-                      title="Edit"
+                      title={t.knowledge.edit}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -218,7 +223,7 @@ export default function KnowledgePage() {
                       type="button"
                       onClick={() => setDeleteTarget(item)}
                       className="rounded-md border border-border bg-background/60 p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      title="Delete"
+                      title={t.knowledge.delete}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -306,14 +311,14 @@ function ErrorBlock({
         </div>
         <div>
           <h3 className="text-base font-medium text-foreground">
-            Couldn&apos;t load knowledge
+            {t.knowledge.couldNotLoadTitle}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
         </div>
       </div>
       <div className="mt-5">
         <Button onClick={onRetry} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4" /> Retry
+          <RefreshCw className="h-4 w-4" /> {t.knowledge.retry}
         </Button>
       </div>
     </div>
@@ -322,8 +327,8 @@ function ErrorBlock({
 
 const itemSchema = z.object({
   type: z.enum(["tezis", "reference", "audience", "voice_rule", "content_theme"]),
-  title: z.string().min(1, "Title is required").max(500),
-  body: z.string().min(1, "Body is required"),
+  title: z.string().min(1, t.knowledge.titleRequired).max(500),
+  body: z.string().min(1, t.knowledge.bodyRequired),
   tags: z.string().optional(),
 });
 
@@ -372,7 +377,7 @@ function CreateOrEditDialog({
       const tags = values.tags
         ? values.tags
             .split(",")
-            .map((t) => t.trim())
+            .map((tag) => tag.trim())
             .filter(Boolean)
         : [];
       if (editing) {
@@ -392,11 +397,13 @@ function CreateOrEditDialog({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["knowledge"] });
-      toast.success(editing ? "Item updated" : "Item created");
+      toast.success(editing ? t.knowledge.saved : t.knowledge.created);
       onOpenChange(false);
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.detail : "Could not save"),
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotSaveToast,
+      ),
   });
 
   const onSubmit = handleSubmit((values) => mutation.mutate(values));
@@ -412,37 +419,34 @@ function CreateOrEditDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editing ? "Edit knowledge item" : "New knowledge item"}
+            {editing ? t.knowledge.editTitle : t.knowledge.createTitle}
           </DialogTitle>
-          <DialogDescription>
-            Tezises and references get injected into AI prompts when attached
-            to a node.
-          </DialogDescription>
+          <DialogDescription>{t.knowledge.formSub}</DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="k-type">Type</Label>
+            <Label htmlFor="k-type">{t.knowledge.typeLabel}</Label>
             <select
               id="k-type"
               {...register("type")}
               className="flex h-10 w-full rounded-md border border-input bg-background/40 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              {KNOWLEDGE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {KNOWLEDGE_TYPES.map((tp) => (
+                <option key={tp} value={tp}>
+                  {typeLabel(tp)}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="k-title">Title</Label>
+            <Label htmlFor="k-title">{t.knowledge.titleLabel}</Label>
             <Input id="k-title" autoFocus {...register("title")} />
             {errors.title && (
               <p className="text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="k-body">Body</Label>
+            <Label htmlFor="k-body">{t.knowledge.bodyLabel}</Label>
             <Textarea id="k-body" rows={6} {...register("body")} />
             {errors.body && (
               <p className="text-xs text-destructive">{errors.body.message}</p>
@@ -450,12 +454,14 @@ function CreateOrEditDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="k-tags">
-              Tags{" "}
-              <span className="text-muted-foreground">(comma-separated)</span>
+              {t.knowledge.tagsLabel}{" "}
+              <span className="text-muted-foreground">
+                {t.knowledge.tagsHint}
+              </span>
             </Label>
             <Input
               id="k-tags"
-              placeholder="founders, ai, b2b"
+              placeholder={t.knowledge.tagsPlaceholder}
               {...register("tags")}
             />
           </div>
@@ -466,7 +472,7 @@ function CreateOrEditDialog({
             >
               {mutation.error instanceof ApiError
                 ? mutation.error.detail
-                : "Could not save."}
+                : t.knowledge.couldNotSave}
             </div>
           )}
           <DialogFooter>
@@ -476,17 +482,18 @@ function CreateOrEditDialog({
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {t.common.saving}
                 </>
               ) : editing ? (
-                "Save"
+                t.common.save
               ) : (
-                "Create"
+                t.common.create
               )}
             </Button>
           </DialogFooter>
@@ -508,11 +515,13 @@ function DeleteDialog({
     mutationFn: (id: string) => deleteKnowledge(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["knowledge"] });
-      toast.success("Item deleted");
+      toast.success(t.knowledge.deleted);
       onClose();
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.detail : "Could not delete"),
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotDelete,
+      ),
   });
 
   return (
@@ -524,22 +533,21 @@ function DeleteDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete knowledge item?</DialogTitle>
+          <DialogTitle>{t.knowledge.deleteTitle}</DialogTitle>
           <DialogDescription>
-            &ldquo;{item?.title}&rdquo; will be removed everywhere it&apos;s
-            attached. This cannot be undone.
+            {t.knowledge.deleteSub(item?.title ?? "")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             variant="destructive"
             onClick={() => item && mutation.mutate(item.id)}
             disabled={mutation.isPending}
           >
-            {mutation.isPending ? "Deleting…" : "Delete"}
+            {mutation.isPending ? t.common.deleting : t.common.delete}
           </Button>
         </DialogFooter>
       </DialogContent>

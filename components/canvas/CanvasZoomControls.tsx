@@ -3,6 +3,10 @@
 /**
  * Bottom-left zoom controls + zoom-percentage label, 1:1 from
  * `THE CONTENT-2/chrome.jsx#ZoomControls`.
+ *
+ * Note: The bottom-right is now occupied by `<MiniMap />` rendered inside
+ * `<ReactFlow>` (see CanvasEditor.tsx). The earlier `CanvasSwatches`
+ * decorative export has been removed.
  */
 
 import * as React from "react";
@@ -41,29 +45,6 @@ export function CanvasZoomControls() {
         <ZoomOut size={14} />
       </button>
       <div className="co-zoom-level">{Math.round(zoom * 100)}%</div>
-    </div>
-  );
-}
-
-export function CanvasSwatches() {
-  // Visual decoration only — three accent swatches.
-  return (
-    <div className="co-swatches">
-      <div
-        className="co-swatch"
-        style={{ background: "#6366f1" }}
-        title="Indigo"
-      />
-      <div
-        className="co-swatch"
-        style={{ background: "#22c55e" }}
-        title="Green"
-      />
-      <div
-        className="co-swatch"
-        style={{ background: "#eab308" }}
-        title="Amber"
-      />
     </div>
   );
 }

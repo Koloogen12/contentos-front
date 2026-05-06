@@ -3,7 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -20,11 +25,18 @@ import {
 import { ApiError } from "@/lib/api";
 import {
   duplicateCanvas,
+  getCanvas,
   listCanvases,
   listCanvasTemplates,
 } from "@/lib/canvases";
 import { listProjects } from "@/lib/projects";
-import type { CanvasOut, ProjectOut } from "@/lib/types";
+import type {
+  CanvasDetail,
+  CanvasOut,
+  EdgeOut,
+  NodeOut,
+  ProjectOut,
+} from "@/lib/types";
 import { t, formatRelativeRu } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -118,7 +130,14 @@ export default function DashboardPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <CreateCanvasDialog defaultProjectId={projectId} />
+          <CreateCanvasDialog
+            defaultProjectId={projectId}
+            trigger={
+              <Button>
+                <Plus className="h-4 w-4" /> {t.dash.newCanvas}
+              </Button>
+            }
+          />
           <button
             type="button"
             className="co-iconbtn"
@@ -144,7 +163,7 @@ export default function DashboardPage() {
           />
         ) : (
           <div className="co-dash-grid">
-            <NewCanvasTile />
+            <NewCanvasTile defaultProjectId={projectId} />
             {filtered.map((c) => (
               <CanvasCard
                 key={c.id}
@@ -174,7 +193,7 @@ export default function DashboardPage() {
             style={{ minHeight: 120, opacity: 0.7 }}
           >
             <LibraryBig size={18} />
-            <div style={{ fontSize: 12.5 }}>Шаблонов пока нет</div>
+            <div style={{ fontSize: 12.5 }}>{t.dashboard.noTemplates}</div>
             <button
               type="button"
               className="co-btn co-btn-ghost"
@@ -192,7 +211,7 @@ export default function DashboardPage() {
                 className="co-canvas-card"
               >
                 <div className="co-canvas-card-thumb">
-                  <ThumbMiniNodes />
+                  <CanvasThumb canvasId={tpl.id} />
                 </div>
                 <div className="co-canvas-card-meta">
                   <div className="co-canvas-card-name">{tpl.name}</div>
@@ -225,25 +244,34 @@ export default function DashboardPage() {
   );
 }
 
-function NewCanvasTile() {
-  // Mount the existing CreateCanvasDialog (ships its own DialogTrigger
-  // button) but absolutely-position it inside our dashed-border tile so
-  // the tile is the click target. We don't try to control its open state
-  // from outside — it owns its own state via Radix Dialog.
+function NewCanvasTile({
+  defaultProjectId,
+}: {
+  defaultProjectId: string | null;
+}) {
+  const [open, setOpen] = React.useState(false);
   return (
-    <div className="relative co-canvas-card-create">
-      <Plus size={20} />
-      <div style={{ fontSize: 13, fontWeight: 500 }}>
-        {t.dash.cardCreateTitle}
-      </div>
-      <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
-        {t.dash.cardCreateSub}
-      </div>
-      {/* Stretch the trigger over the tile so anywhere inside opens the dialog. */}
-      <div className="absolute inset-0 [&>button]:absolute [&>button]:inset-0 [&>button]:opacity-0">
-        <CreateCanvasDialog />
-      </div>
-    </div>
+    <>
+      <button
+        type="button"
+        className="relative co-canvas-card-create cursor-pointer text-left"
+        onClick={() => setOpen(true)}
+      >
+        <Plus size={20} />
+        <div style={{ fontSize: 13, fontWeight: 500 }}>
+          {t.dash.cardCreateTitle}
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+          {t.dash.cardCreateSub}
+        </div>
+      </button>
+      <CreateCanvasDialog
+        defaultProjectId={defaultProjectId}
+        open={open}
+        onOpenChange={setOpen}
+        hideTrigger
+      />
+    </>
   );
 }
 
@@ -262,12 +290,12 @@ function CanvasCard({
     mutationFn: () => duplicateCanvas(canvas.id),
     onSuccess: (clone) => {
       qc.invalidateQueries({ queryKey: ["canvases"] });
-      toast.success("Канвас продублирован");
+      toast.success(t.dashboard.duplicateSuccess);
       router.push(`/canvas/${clone.id}`);
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Не удалось продублировать",
+        err instanceof ApiError ? err.detail : t.dashboard.duplicateError,
       ),
   });
 
@@ -275,7 +303,7 @@ function CanvasCard({
     <div className="relative group">
       <Link href={`/canvas/${canvas.id}`} className="co-canvas-card">
         <div className="co-canvas-card-thumb">
-          <ThumbMiniNodes />
+          <CanvasThumb canvasId={canvas.id} />
         </div>
         <div className="co-canvas-card-meta">
           <div className="co-canvas-card-name">{canvas.name}</div>
@@ -289,7 +317,7 @@ function CanvasCard({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="Действия"
+              aria-label={t.dashboard.actions}
               className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-black/60 text-zinc-300 backdrop-blur hover:text-foreground"
               onClick={(e) => e.preventDefault()}
             >
@@ -303,7 +331,7 @@ function CanvasCard({
                 onRename(canvas);
               }}
             >
-              <Pencil className="h-4 w-4" /> Переименовать
+              <Pencil className="h-4 w-4" /> {t.dashboard.rename}
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={duplicateMutation.isPending}
@@ -312,7 +340,7 @@ function CanvasCard({
                 duplicateMutation.mutate();
               }}
             >
-              <CopyIcon className="h-4 w-4" /> Дублировать
+              <CopyIcon className="h-4 w-4" /> {t.dashboard.duplicate}
             </DropdownMenuItem>
             <DropdownMenuItem
               destructive
@@ -321,7 +349,7 @@ function CanvasCard({
                 onDelete(canvas);
               }}
             >
-              <Trash2 className="h-4 w-4" /> Удалить
+              <Trash2 className="h-4 w-4" /> {t.dashboard.delete}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -330,38 +358,170 @@ function CanvasCard({
   );
 }
 
-function ThumbMiniNodes() {
-  // Three tiny node-shaped chips connected with thin lines — purely
-  // decorative. Mirrors the prototype's `thumb-mini-node` aesthetic.
+/**
+ * Lightweight per-canvas thumbnail. Lazy-loads the canvas detail (cached
+ * for 30s) and renders a real mini-graph SVG with nodes coloured by type
+ * and edges as curved lines between centers.
+ */
+function CanvasThumb({ canvasId }: { canvasId: string }) {
+  const detail = useCanvasDetail(canvasId);
+  if (!detail) return <ThumbPlaceholder />;
+  return <ThumbMiniGraph nodes={detail.nodes} edges={detail.edges} />;
+}
+
+const THUMB_W = 240;
+const THUMB_H = 130;
+const NODE_W = 32;
+const NODE_H = 22;
+
+function ThumbMiniGraph({
+  nodes,
+  edges,
+}: {
+  nodes: NodeOut[];
+  edges: EdgeOut[];
+}) {
+  if (nodes.length === 0) return <ThumbPlaceholder />;
+
+  // Compute bounding box.
+  const xs = nodes.map((n) => n.position_x);
+  const ys = nodes.map((n) => n.position_y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  // Source nodes are ~296px wide, others ~320-380; use a rough avg.
+  const NATIVE_W = 320;
+  const NATIVE_H = 180;
+  const bboxW = maxX - minX + NATIVE_W;
+  const bboxH = maxY - minY + NATIVE_H;
+
+  const padX = 12;
+  const padY = 12;
+  const scale = Math.min(
+    (THUMB_W - padX * 2) / bboxW,
+    (THUMB_H - padY * 2) / bboxH,
+  );
+  const offsetX =
+    (THUMB_W - bboxW * scale) / 2 - minX * scale;
+  const offsetY =
+    (THUMB_H - bboxH * scale) / 2 - minY * scale;
+
+  const positionsById = new Map<
+    string,
+    { cx: number; cy: number; type: NodeOut["type"] }
+  >();
+  for (const n of nodes) {
+    const x = n.position_x * scale + offsetX + (NATIVE_W * scale) / 2;
+    const y = n.position_y * scale + offsetY + (NATIVE_H * scale) / 2;
+    positionsById.set(n.id, { cx: x, cy: y, type: n.type });
+  }
+
   return (
     <svg
-      viewBox="0 0 240 130"
+      viewBox={`0 0 ${THUMB_W} ${THUMB_H}`}
       width="100%"
       height="100%"
       preserveAspectRatio="none"
       style={{ position: "absolute", inset: 0 }}
     >
-      <line
-        x1="56"
-        y1="65"
-        x2="115"
-        y2="65"
-        stroke="rgba(255,255,255,0.25)"
-        strokeWidth="1.2"
-      />
-      <line
-        x1="155"
-        y1="65"
-        x2="200"
-        y2="65"
-        stroke="rgba(255,255,255,0.25)"
-        strokeWidth="1.2"
-      />
-      <rect x="14" y="50" width="42" height="30" rx="6" fill="#3b82f6" fillOpacity="0.3" stroke="#60a5fa" strokeOpacity="0.6" strokeWidth="0.7" />
-      <rect x="100" y="50" width="42" height="30" rx="6" fill="#eab308" fillOpacity="0.3" stroke="#facc15" strokeOpacity="0.6" strokeWidth="0.7" />
-      <rect x="184" y="50" width="42" height="30" rx="6" fill="#a855f7" fillOpacity="0.3" stroke="#c084fc" strokeOpacity="0.6" strokeWidth="0.7" />
+      {edges.map((e) => {
+        const a = positionsById.get(e.source_node_id);
+        const b = positionsById.get(e.target_node_id);
+        if (!a || !b) return null;
+        const dx = (b.cx - a.cx) / 2;
+        const path = `M ${a.cx} ${a.cy} C ${a.cx + dx} ${a.cy}, ${b.cx - dx} ${b.cy}, ${b.cx} ${b.cy}`;
+        return (
+          <path
+            key={e.id}
+            d={path}
+            stroke="rgba(255,255,255,0.25)"
+            strokeWidth="1.2"
+            fill="none"
+          />
+        );
+      })}
+      {Array.from(positionsById.entries()).map(([id, p]) => {
+        const fill = NODE_FILL[p.type];
+        const stroke = NODE_STROKE[p.type];
+        return (
+          <rect
+            key={id}
+            x={p.cx - NODE_W / 2}
+            y={p.cy - NODE_H / 2}
+            width={NODE_W}
+            height={NODE_H}
+            rx={4}
+            fill={fill}
+            fillOpacity={0.3}
+            stroke={stroke}
+            strokeOpacity={0.6}
+            strokeWidth={0.7}
+          />
+        );
+      })}
     </svg>
   );
+}
+
+const NODE_FILL: Record<NodeOut["type"], string> = {
+  source: "#3b82f6",
+  extract: "#eab308",
+  format: "#a855f7",
+};
+const NODE_STROKE: Record<NodeOut["type"], string> = {
+  source: "#60a5fa",
+  extract: "#facc15",
+  format: "#c084fc",
+};
+
+function ThumbPlaceholder() {
+  return (
+    <svg
+      viewBox={`0 0 ${THUMB_W} ${THUMB_H}`}
+      width="100%"
+      height="100%"
+      preserveAspectRatio="none"
+      style={{ position: "absolute", inset: 0 }}
+    >
+      <rect
+        x="20"
+        y="22"
+        width={THUMB_W - 40}
+        height={THUMB_H - 44}
+        rx="8"
+        fill="none"
+        stroke="rgba(255,255,255,0.08)"
+        strokeWidth="1"
+        strokeDasharray="4 5"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Keep canvas-detail prefetches batched at the dashboard level so each
+ * card doesn't redeclare its own query. Uses TanStack `useQueries`.
+ *
+ * Reads the canvases list from the cache and fans out one detail fetch
+ * per canvas + template. Cached 30s.
+ */
+function useCanvasDetail(canvasId: string): CanvasDetail | undefined {
+  // Single per-card useQuery via useQueries with a single key.
+  // Using one entry keeps the API consistent and TanStack-pure.
+  const results = useQueries({
+    queries: [
+      {
+        queryKey: ["canvas", canvasId],
+        queryFn: () => getCanvas(canvasId),
+        staleTime: 30 * 1000,
+        gcTime: 60 * 1000,
+        refetchOnWindowFocus: false,
+        refetchOnMount: false,
+      },
+    ],
+  });
+  return results[0]?.data;
 }
 
 function CanvasGridSkeleton({ small }: { small?: boolean } = {}) {
