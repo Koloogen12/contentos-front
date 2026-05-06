@@ -1,84 +1,93 @@
 "use client";
 
+/**
+ * FormatNode — 1:1 port of `THE CONTENT-2/nodes.jsx#FormatNode`.
+ * Width 380px, 5 platform tabs (using THE CONTENT app's 5 platforms:
+ * telegram / linkedin / carousel / reels / hooks per `lib/types.ts`),
+ * hook radio list, body textarea, CTA, plus a 6-button tweak action row
+ * (Перегенерировать / Скопировать / Другой хук / Сократить / Усилить голос /
+ * Под платформу).
+ */
+
 import * as React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Check, Copy, Loader2, Play, Send } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  ArrowRight,
+  Copy,
+  FileText,
+  Film,
+  Hash,
+  LayoutGrid,
+  Loader2,
+  Mic,
+  PenLine,
+  Play,
+  RefreshCcw,
+  RefreshCw,
+  Send,
+  Sparkles,
+  Wand2,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
+import { ApiError } from "@/lib/api";
+import { tweakNode, type FormatTweakMode } from "@/lib/tweaks";
 import type {
   CarouselSlide,
   FormatNodeData,
   FormatPlatform,
   HookEntry,
-  HookTrigger,
   NodeOut,
   ReelsBeat,
 } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { cn } from "@/lib/utils";
-import { NODE_HANDLE_STYLE, NodeShell } from "./NodeShell";
+import { t } from "@/lib/i18n";
 import { PublishDialog } from "@/components/canvas/PublishDialog";
 
 interface FormatNodeRfData {
   node: NodeOut;
-  expanded: boolean;
-  onToggleExpanded: () => void;
 }
 
-const PLATFORM_OPTIONS: { value: FormatPlatform; label: string }[] = [
-  { value: "telegram", label: "Telegram" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "carousel", label: "Carousel" },
-  { value: "reels", label: "Reels" },
-  { value: "hooks", label: "Hooks" },
+const PLATFORM_LIST: ReadonlyArray<{
+  k: FormatPlatform;
+  label: string;
+  Icon: LucideIcon;
+}> = [
+  { k: "telegram", label: "Telegram", Icon: Send },
+  { k: "linkedin", label: "LinkedIn", Icon: FileText },
+  { k: "carousel", label: "Carousel", Icon: LayoutGrid },
+  { k: "reels", label: "Reels", Icon: Film },
+  { k: "hooks", label: "Hooks", Icon: Hash },
 ];
 
-/**
- * Subtle, palette-aligned colors for each hook trigger. Eight distinct
- * tints picked from the existing emerald / amber / indigo / rose / cyan /
- * violet / sky / slate ramps used elsewhere in the app.
- */
-const TRIGGER_STYLES: Record<HookTrigger, string> = {
-  paradox: "bg-violet-500/15 text-violet-300 border-violet-500/25",
-  number: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
-  contrast: "bg-amber-500/15 text-amber-300 border-amber-500/25",
-  provocation: "bg-rose-500/15 text-rose-300 border-rose-500/25",
-  story: "bg-cyan-500/15 text-cyan-300 border-cyan-500/25",
-  dissonance: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/25",
-  question: "bg-sky-500/15 text-sky-300 border-sky-500/25",
-  other: "bg-zinc-500/15 text-zinc-300 border-zinc-500/25",
-};
-
-const TRIGGER_LABEL: Record<HookTrigger, string> = {
-  paradox: "Paradox",
-  number: "Number",
-  contrast: "Contrast",
-  provocation: "Provocation",
-  story: "Story",
-  dissonance: "Dissonance",
-  question: "Question",
-  other: "Other",
+const PLATFORM_LABEL: Record<FormatPlatform, string> = {
+  telegram: "Telegram",
+  linkedin: "LinkedIn",
+  carousel: "Carousel",
+  reels: "Reels",
+  hooks: "Hooks",
 };
 
 export function FormatNode({ data, selected }: NodeProps) {
   const typed = data as unknown as FormatNodeRfData;
   const node = typed.node;
-  const expanded = typed.expanded;
-  const { updateNodeData, runNode, isRunning, readOnly } =
+  const { updateNodeData, runNode, isRunning, attachSkillRun, readOnly } =
     useCanvasNodeContext();
+  const status = node.status;
   const running = isRunning(node.id);
   const format = (node.data ?? {}) as FormatNodeData;
   const platform: FormatPlatform = format.platform ?? "telegram";
   const hooks = format.hooks ?? [];
-  const selectedHook = format.selected_hook_index ?? 0;
   const slides = format.slides ?? [];
   const beats = format.beats ?? [];
   const hooksBank = format.hooks_bank ?? [];
-  const [copied, setCopied] = React.useState(false);
+  const selectedHook = format.selected_hook_index ?? 0;
   const [publishOpen, setPublishOpen] = React.useState(false);
-  const canPublish =
-    !!format.full_text && platform === "telegram" && !readOnly;
 
-  // What signals "this format has output" varies by platform.
   const hasOutput = React.useMemo(() => {
     if (platform === "carousel") return slides.length > 0;
     if (platform === "reels") return beats.length > 0 || hooks.length > 0;
@@ -86,211 +95,327 @@ export function FormatNode({ data, selected }: NodeProps) {
     return hooks.length > 0;
   }, [platform, slides.length, beats.length, hooks.length, hooksBank.length]);
 
-  const onPlatformChange = async (next: FormatPlatform) => {
+  const tweakMutation = useMutation({
+    mutationFn: ({ mode }: { mode: FormatTweakMode }) =>
+      tweakNode(node.id, mode),
+    onSuccess: ({ skill_run_id }) => {
+      attachSkillRun(node.id, skill_run_id);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.canvas.couldNotStartRun,
+      ),
+  });
+
+  const setPlatform = async (p: FormatPlatform) => {
     if (readOnly) return;
-    if (next === platform) return;
-    await updateNodeData(node.id, { platform: next });
+    if (p === platform) return;
+    await updateNodeData(node.id, { platform: p });
   };
 
-  const onSelectHook = async (i: number) => {
+  const setHook = async (i: number) => {
     if (readOnly) return;
     if (i === selectedHook) return;
-    await updateNodeData(node.id, { selected_hook_index: i });
+    const newFull =
+      (hooks[i] ?? "") +
+      "\n\n" +
+      (format.body ?? "") +
+      "\n\n" +
+      (format.cta ?? "");
+    await updateNodeData(node.id, {
+      selected_hook_index: i,
+      full_text: newFull,
+    });
   };
 
   const onCopy = async () => {
     if (!format.full_text) return;
     try {
       await navigator.clipboard.writeText(format.full_text);
-      setCopied(true);
-      toast.success("Copied to clipboard");
-      setTimeout(() => setCopied(false), 1500);
+      toast.success(t.format.copySuccess);
     } catch {
-      toast.error("Could not copy to clipboard");
+      toast.error(t.format.copyError);
     }
   };
 
-  const subhead = React.useMemo(() => {
-    if (platform === "carousel" && slides.length > 0)
-      return `${slides.length} slides generated`;
-    if (platform === "reels" && beats.length > 0)
-      return `${beats.length} beats · ~${format.duration_sec ?? "?"}s`;
-    if (platform === "hooks" && hooksBank.length > 0) {
-      const first = hooksBank[0]?.text ?? "";
-      const truncated =
-        first.length > 80 ? `${first.slice(0, 80).trimEnd()}…` : first;
-      return `${hooksBank.length} hooks · ${truncated}`;
-    }
-    if (hooks.length > 0) return `${hooks.length} hooks generated`;
-    return undefined;
-  }, [
-    platform,
-    slides.length,
-    beats.length,
-    hooks.length,
-    hooksBank,
-    format.duration_sec,
-  ]);
-
   return (
-    <>
+    <div className="relative" style={{ width: 380 }}>
       <Handle
         type="target"
         position={Position.Left}
-        style={NODE_HANDLE_STYLE}
-      />
-      <NodeShell
-        title={`Format → ${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
-        status={node.status}
-        selected={!!selected}
-        expanded={expanded}
-        onToggleExpanded={typed.onToggleExpanded}
-        subhead={subhead}
-        headerActions={
-          readOnly ? null : (
+        style={PORT_STYLE_LEFT}
+      >
+        <ArrowRight size={12} />
+      </Handle>
+      <div className="co-node-label">
+        <PenLine size={12} />
+        <span>{t.format.label}</span>
+      </div>
+      <div
+        className={cn(
+          "co-node-shell",
+          selected && "selected",
+          status === "running" && "running",
+          status === "done" && "done",
+          status === "error" && "error",
+        )}
+      >
+        <span className={`co-node-status-dot ${status ?? "idle"}`} />
+
+        <div className="co-node-content">
+          {/* Platform tabs */}
+          <div className="co-platform-tabs">
+            {PLATFORM_LIST.map(({ k, label, Icon }) => (
+              <button
+                key={k}
+                type="button"
+                title={label}
+                className={cn(
+                  "co-platform-tab nodrag",
+                  platform === k && "active",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void setPlatform(k);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={readOnly}
+              >
+                <Icon size={15} />
+              </button>
+            ))}
+          </div>
+
+          {format.talking_point_text && (
+            <div className="co-tp-preview">{format.talking_point_text}</div>
+          )}
+
+          {!hasOutput && status === "idle" && (
             <button
               type="button"
-              className="nodrag inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="co-btn co-btn-primary nodrag"
               onClick={(e) => {
                 e.stopPropagation();
                 runNode(node.id);
               }}
-              disabled={running}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={readOnly || running}
             >
-              {running ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Play className="h-3 w-3" />
-              )}
-              Run
+              <Play size={14} />
+              {t.format.runButton}
             </button>
-          )
-        }
-      >
-        <div className="space-y-2.5">
-          {!readOnly && (
-            <PlatformPicker platform={platform} onChange={onPlatformChange} />
           )}
 
-          {!hasOutput ? (
-            <p className="text-xs leading-relaxed text-zinc-500">
-              {readOnly
-                ? "(No output)"
-                : "Connect a talking point and click Run."}
-            </p>
-          ) : platform === "carousel" ? (
-            <CarouselBody
-              slides={slides}
-              summary={format.summary}
-              cta={format.cta}
-              expanded={expanded}
-            />
-          ) : platform === "reels" ? (
-            <ReelsBody
-              hooks={hooks}
-              selectedHook={selectedHook}
-              onSelectHook={onSelectHook}
-              beats={beats}
-              cta={format.cta}
-              caption={format.caption}
-              expanded={expanded}
-              readOnly={!!readOnly}
-            />
-          ) : platform === "hooks" ? (
-            <HooksBody hooks={hooksBank} expanded={expanded} />
-          ) : (
-            <PostBody
-              hooks={hooks}
-              selectedHook={selectedHook}
-              onSelectHook={onSelectHook}
-              body={format.body}
-              cta={format.cta}
-              expanded={expanded}
-              readOnly={!!readOnly}
-            />
+          {(status === "running" || running) && !hasOutput && (
+            <>
+              <div className="co-spin-row">
+                <div className="co-spinner" />
+                <span>{t.format.runningStatus(PLATFORM_LABEL[platform])}</span>
+              </div>
+              <div className="co-skeleton">
+                <div className="co-skeleton-line w90" />
+                <div className="co-skeleton-line w70" />
+                <div className="co-skeleton-line w90" style={{ marginTop: 6 }} />
+                <div className="co-skeleton-line w90" />
+                <div className="co-skeleton-line w70" />
+                <div className="co-skeleton-line w50" />
+              </div>
+            </>
+          )}
+
+          {status === "error" && !hasOutput && (
+            <div
+              className="co-placeholder-empty"
+              style={{ borderColor: "rgba(239,68,68,0.3)", color: "#fca5a5" }}
+            >
+              <AlertCircle size={13} />
+              <span>{t.format.error}</span>
+            </div>
           )}
 
           {hasOutput && (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onCopy();
-                }}
-                disabled={!format.full_text}
-              >
-                {copied ? (
-                  <Check className="h-3 w-3 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-                {copied ? "Copied" : "Copy all"}
-              </button>
-              {canPublish && (
+            <>
+              {/* Platform-specific body */}
+              {platform === "carousel" ? (
+                <CarouselBody
+                  slides={slides}
+                  summary={format.summary}
+                  cta={format.cta}
+                />
+              ) : platform === "reels" ? (
+                <ReelsBody
+                  hooks={hooks}
+                  selectedHook={selectedHook}
+                  onSelectHook={setHook}
+                  beats={beats}
+                  caption={format.caption}
+                  cta={format.cta}
+                  readOnly={!!readOnly}
+                />
+              ) : platform === "hooks" ? (
+                <HooksBankBody hooks={hooksBank} />
+              ) : (
+                <PostBody
+                  hooks={hooks}
+                  selectedHook={selectedHook}
+                  onSelectHook={setHook}
+                  body={format.body ?? ""}
+                  cta={format.cta ?? ""}
+                  onUpdateBody={(v) => {
+                    void updateNodeData(node.id, {
+                      body: v,
+                      full_text:
+                        (hooks[selectedHook] ?? "") +
+                        "\n\n" +
+                        v +
+                        "\n\n" +
+                        (format.cta ?? ""),
+                    });
+                  }}
+                  onUpdateCta={(v) => {
+                    void updateNodeData(node.id, {
+                      cta: v,
+                      full_text:
+                        (hooks[selectedHook] ?? "") +
+                        "\n\n" +
+                        (format.body ?? "") +
+                        "\n\n" +
+                        v,
+                    });
+                  }}
+                  readOnly={!!readOnly}
+                />
+              )}
+
+              {!readOnly && (
+                <div className="flex flex-wrap gap-2">
+                  <ActionBtn
+                    Icon={RefreshCw}
+                    label={t.format.actions.regenerate}
+                    onClick={() => tweakMutation.mutate({ mode: "regenerate" })}
+                    busy={
+                      tweakMutation.isPending &&
+                      tweakMutation.variables?.mode === "regenerate"
+                    }
+                    disabled={running || tweakMutation.isPending}
+                  />
+                  <ActionBtn
+                    Icon={Copy}
+                    label={t.format.actions.copy}
+                    onClick={() => void onCopy()}
+                    disabled={!format.full_text}
+                    primary
+                  />
+                  <ActionBtn
+                    Icon={RefreshCcw}
+                    label={t.format.actions.rehook}
+                    onClick={() => tweakMutation.mutate({ mode: "rehook" })}
+                    busy={
+                      tweakMutation.isPending &&
+                      tweakMutation.variables?.mode === "rehook"
+                    }
+                    disabled={running || tweakMutation.isPending}
+                  />
+                  <ActionBtn
+                    Icon={Zap}
+                    label={t.format.actions.shorten}
+                    onClick={() => tweakMutation.mutate({ mode: "shorten" })}
+                    busy={
+                      tweakMutation.isPending &&
+                      tweakMutation.variables?.mode === "shorten"
+                    }
+                    disabled={running || tweakMutation.isPending}
+                  />
+                  <ActionBtn
+                    Icon={Mic}
+                    label={t.format.actions.amplifyVoice}
+                    onClick={() =>
+                      tweakMutation.mutate({ mode: "amplify_voice" })
+                    }
+                    busy={
+                      tweakMutation.isPending &&
+                      tweakMutation.variables?.mode === "amplify_voice"
+                    }
+                    disabled={running || tweakMutation.isPending}
+                  />
+                  <ActionBtn
+                    Icon={Wand2}
+                    label={t.format.actions.platform}
+                    onClick={() =>
+                      tweakMutation.mutate({ mode: "platform_optimize" })
+                    }
+                    busy={
+                      tweakMutation.isPending &&
+                      tweakMutation.variables?.mode === "platform_optimize"
+                    }
+                    disabled={running || tweakMutation.isPending}
+                  />
+                </div>
+              )}
+
+              {!readOnly && platform === "telegram" && format.full_text && (
                 <button
                   type="button"
-                  className="nodrag inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="co-btn co-btn-primary nodrag w-full"
                   onClick={(e) => {
                     e.stopPropagation();
                     setPublishOpen(true);
                   }}
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
-                  <Send className="h-3 w-3" />
-                  Publish to Telegram
+                  <Send size={13} /> Опубликовать в Telegram
                 </button>
               )}
-            </div>
+            </>
           )}
         </div>
-      </NodeShell>
-      {canPublish && (
+      </div>
+
+      {!readOnly && format.full_text && platform === "telegram" && (
         <PublishDialog
           nodeId={node.id}
           open={publishOpen}
           onOpenChange={setPublishOpen}
         />
       )}
-    </>
-  );
-}
-
-function PlatformPicker({
-  platform,
-  onChange,
-}: {
-  platform: FormatPlatform;
-  onChange: (next: FormatPlatform) => Promise<void>;
-}) {
-  // 5 options — lay out as a single row of equal-width pills (2.5 columns
-  // each on small viewports — but the canvas node is fixed-width so a
-  // 5-col row reads well at 320px).
-  return (
-    <div className="nodrag grid grid-cols-5 gap-1 rounded-md border border-white/5 bg-black/30 p-0.5">
-      {PLATFORM_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          className={cn(
-            "rounded px-1 py-1 text-[10px] font-medium transition-colors",
-            platform === opt.value
-              ? "bg-white/10 text-foreground"
-              : "text-zinc-400 hover:text-zinc-200",
-          )}
-          onClick={(e) => {
-            e.stopPropagation();
-            void onChange(opt.value);
-          }}
-        >
-          {opt.label}
-        </button>
-      ))}
     </div>
   );
 }
 
-// ----- Telegram / LinkedIn body --------------------------------------
+function ActionBtn({
+  Icon,
+  label,
+  onClick,
+  busy,
+  disabled,
+  primary,
+}: {
+  Icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "co-btn nodrag",
+        primary ? "co-btn-primary" : "co-btn-ghost",
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      disabled={disabled}
+    >
+      {busy ? <Loader2 size={11} className="animate-spin" /> : <Icon size={11} />}
+      {label}
+    </button>
+  );
+}
 
 function PostBody({
   hooks,
@@ -298,399 +423,258 @@ function PostBody({
   onSelectHook,
   body,
   cta,
-  expanded,
+  onUpdateBody,
+  onUpdateCta,
   readOnly,
 }: {
   hooks: string[];
   selectedHook: number;
   onSelectHook: (i: number) => Promise<void>;
-  body: string | undefined;
-  cta: string | undefined;
-  expanded: boolean;
+  body: string;
+  cta: string;
+  onUpdateBody: (v: string) => void;
+  onUpdateCta: (v: string) => void;
   readOnly: boolean;
 }) {
+  const [bodyDraft, setBodyDraft] = React.useState(body);
+  const [ctaDraft, setCtaDraft] = React.useState(cta);
+  React.useEffect(() => setBodyDraft(body), [body]);
+  React.useEffect(() => setCtaDraft(cta), [cta]);
+
   return (
     <>
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-          Hooks
+      {hooks.length > 0 && (
+        <div>
+          <div className="co-field-label">{t.format.hookHeader}</div>
+          <div className="co-hooks-list">
+            {hooks.map((h, i) => (
+              <button
+                type="button"
+                key={i}
+                className={cn(
+                  "co-hook-radio nodrag",
+                  selectedHook === i && "active",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onSelectHook(i);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={readOnly}
+              >
+                <span className="co-hook-radio-dot" />
+                <span className="co-hook-radio-text">{h}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <ul className="space-y-1">
-          {hooks.map((hook, i) => {
-            const isSelected = selectedHook === i;
-            return (
-              <li key={i}>
-                <button
-                  type="button"
-                  className={cn(
-                    "nodrag flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] leading-snug transition-colors",
-                    isSelected
-                      ? "border-primary/60 bg-primary/10 text-foreground"
-                      : "border-white/5 bg-black/30 text-zinc-300 hover:bg-black/50",
-                    readOnly && "cursor-default",
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!readOnly) void onSelectHook(i);
-                  }}
-                  disabled={readOnly}
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 h-3 w-3 shrink-0 rounded-full border",
-                      isSelected
-                        ? "border-primary bg-primary"
-                        : "border-zinc-500",
-                    )}
-                    aria-hidden
-                  />
-                  <span
-                    className={cn(
-                      expanded ? "line-clamp-none" : "line-clamp-2",
-                    )}
-                  >
-                    {hook}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      )}
+
+      <div>
+        <div className="co-field-label">{t.format.bodyLabel}</div>
+        <textarea
+          className="co-content-textarea nodrag"
+          value={bodyDraft}
+          onChange={(e) => setBodyDraft(e.target.value)}
+          onBlur={() => {
+            if (bodyDraft !== body) onUpdateBody(bodyDraft);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          rows={8}
+          disabled={readOnly}
+        />
       </div>
 
-      {expanded && body && (
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Body
-          </div>
-          <div className="scrollbar-thin max-h-[180px] overflow-auto whitespace-pre-wrap rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-relaxed text-zinc-200">
-            {body}
-          </div>
-        </div>
-      )}
-
-      {cta && (
-        <div className="text-[11px] text-zinc-400">
-          <span className="text-zinc-500">CTA:</span>{" "}
-          <span className="font-medium text-zinc-200">{cta}</span>
-        </div>
-      )}
+      <div>
+        <div className="co-field-label">{t.format.ctaLabel}</div>
+        <input
+          type="text"
+          className="co-field-input nodrag"
+          value={ctaDraft}
+          onChange={(e) => setCtaDraft(e.target.value)}
+          onBlur={() => {
+            if (ctaDraft !== cta) onUpdateCta(ctaDraft);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={readOnly}
+        />
+      </div>
     </>
   );
 }
-
-// ----- Carousel body -------------------------------------------------
 
 function CarouselBody({
   slides,
   summary,
   cta,
-  expanded,
 }: {
   slides: CarouselSlide[];
-  summary: string | undefined;
-  cta: string | undefined;
-  expanded: boolean;
+  summary?: string;
+  cta?: string;
 }) {
-  const visibleSlides = expanded ? slides : slides.slice(0, 3);
   return (
-    <>
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-          Slides
-        </div>
-        <ul className="space-y-1.5">
-          {visibleSlides.map((slide, i) => (
-            <li
-              key={i}
-              className="rounded-md border border-white/5 bg-black/30 p-2"
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-primary/20 text-[9px] font-semibold text-primary">
-                  {i + 1}
-                </span>
-                <span className="line-clamp-1 text-[11px] font-medium text-zinc-100">
-                  {slide.title}
-                </span>
-                {slide.is_cover && (
-                  <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
-                    Cover
-                  </span>
-                )}
-              </div>
-              <p
-                className={cn(
-                  "mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-300",
-                  expanded ? "" : "line-clamp-2",
-                )}
-              >
-                {slide.body}
-              </p>
-            </li>
-          ))}
-        </ul>
-        {!expanded && slides.length > visibleSlides.length && (
-          <p className="text-[10px] text-zinc-500">
-            +{slides.length - visibleSlides.length} more · expand to see all
-          </p>
-        )}
-      </div>
-
-      {expanded && summary && (
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Summary
+    <div className="flex flex-col gap-1.5">
+      {slides.map((s, i) => (
+        <div
+          key={i}
+          className="rounded-md border border-white/5 bg-black/30 p-2"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/15 text-[9px] font-semibold">
+              {i + 1}
+            </span>
+            <span className="line-clamp-1 text-[11px] font-medium text-zinc-100">
+              {s.title}
+            </span>
+            {s.is_cover && (
+              <span className="ml-auto text-[9px] uppercase tracking-wide text-amber-300">
+                Обложка
+              </span>
+            )}
           </div>
-          <p className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200">
-            {summary}
+          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-300">
+            {s.body}
           </p>
         </div>
-      )}
-
-      {cta && (
-        <div className="text-[11px] text-zinc-400">
-          <span className="text-zinc-500">CTA:</span>{" "}
-          <span className="font-medium text-zinc-200">{cta}</span>
+      ))}
+      {summary && (
+        <div className="text-[12px] text-[color:var(--text-tertiary)]">
+          {summary}
         </div>
       )}
-    </>
+      {cta && (
+        <div className="text-[11px] text-[color:var(--text-secondary)]">
+          <span className="text-[color:var(--text-muted)]">CTA:</span> {cta}
+        </div>
+      )}
+    </div>
   );
 }
-
-// ----- Reels body ----------------------------------------------------
 
 function ReelsBody({
   hooks,
   selectedHook,
   onSelectHook,
   beats,
-  cta,
   caption,
-  expanded,
+  cta,
   readOnly,
 }: {
   hooks: string[];
   selectedHook: number;
   onSelectHook: (i: number) => Promise<void>;
   beats: ReelsBeat[];
-  cta: string | undefined;
-  caption: string | undefined;
-  expanded: boolean;
+  caption?: string;
+  cta?: string;
   readOnly: boolean;
 }) {
-  const visibleBeats = expanded ? beats : beats.slice(0, 2);
   return (
-    <>
+    <div className="flex flex-col gap-2">
       {hooks.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Hooks
+        <div>
+          <div className="co-field-label">{t.format.hookHeader}</div>
+          <div className="co-hooks-list">
+            {hooks.map((h, i) => (
+              <button
+                type="button"
+                key={i}
+                className={cn(
+                  "co-hook-radio nodrag",
+                  selectedHook === i && "active",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onSelectHook(i);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={readOnly}
+              >
+                <span className="co-hook-radio-dot" />
+                <span className="co-hook-radio-text">{h}</span>
+              </button>
+            ))}
           </div>
-          <ul className="space-y-1">
-            {hooks.map((hook, i) => {
-              const isSelected = selectedHook === i;
-              return (
-                <li key={i}>
-                  <button
-                    type="button"
-                    className={cn(
-                      "nodrag flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] leading-snug transition-colors",
-                      isSelected
-                        ? "border-primary/60 bg-primary/10 text-foreground"
-                        : "border-white/5 bg-black/30 text-zinc-300 hover:bg-black/50",
-                      readOnly && "cursor-default",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!readOnly) void onSelectHook(i);
-                    }}
-                    disabled={readOnly}
-                  >
-                    <span
-                      className={cn(
-                        "mt-0.5 h-3 w-3 shrink-0 rounded-full border",
-                        isSelected
-                          ? "border-primary bg-primary"
-                          : "border-zinc-500",
-                      )}
-                      aria-hidden
-                    />
-                    <span
-                      className={cn(
-                        expanded ? "line-clamp-none" : "line-clamp-2",
-                      )}
-                    >
-                      {hook}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
         </div>
       )}
 
       {beats.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Beats
-          </div>
-          <ol className="space-y-1.5">
-            {visibleBeats.map((beat, i) => (
+        <div>
+          <div className="co-field-label">Биты</div>
+          <ol className="flex flex-col gap-1.5">
+            {beats.map((b, i) => (
               <li
                 key={i}
-                className="rounded-md border border-white/5 bg-black/30 p-2"
+                className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200"
               >
-                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-primary/20 text-[9px] font-semibold text-primary">
-                    {i + 1}
-                  </span>
-                  <span>~{beat.duration_sec}s</span>
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+                  #{i + 1} · ~{b.duration_sec}s
                 </div>
-                <p
-                  className={cn(
-                    "mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-200",
-                    expanded ? "" : "line-clamp-2",
-                  )}
-                >
-                  {beat.script}
-                </p>
-                {beat.visual && (
-                  <p
-                    className={cn(
-                      "mt-1 whitespace-pre-wrap text-[11px] italic leading-snug text-zinc-400",
-                      expanded ? "" : "line-clamp-1",
-                    )}
-                  >
-                    {beat.visual}
-                  </p>
+                <p className="mt-1 whitespace-pre-wrap">{b.script}</p>
+                {b.visual && (
+                  <p className="mt-1 italic text-zinc-400">{b.visual}</p>
                 )}
               </li>
             ))}
           </ol>
-          {!expanded && beats.length > visibleBeats.length && (
-            <p className="text-[10px] text-zinc-500">
-              +{beats.length - visibleBeats.length} more · expand to see all
-            </p>
-          )}
         </div>
       )}
 
-      {expanded && caption && (
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Caption
-          </div>
-          <p className="whitespace-pre-wrap rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200">
+      {caption && (
+        <div>
+          <div className="co-field-label">Caption</div>
+          <p className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap">
             {caption}
           </p>
         </div>
       )}
 
       {cta && (
-        <div className="text-[11px] text-zinc-400">
-          <span className="text-zinc-500">CTA:</span>{" "}
-          <span className="font-medium text-zinc-200">{cta}</span>
+        <div className="text-[11px] text-[color:var(--text-secondary)]">
+          <span className="text-[color:var(--text-muted)]">CTA:</span> {cta}
         </div>
-      )}
-    </>
-  );
-}
-
-// ----- Hooks body ----------------------------------------------------
-
-function HooksBody({
-  hooks,
-  expanded,
-}: {
-  hooks: HookEntry[];
-  expanded: boolean;
-}) {
-  const visible = expanded ? hooks : hooks.slice(0, 4);
-  return (
-    <div className="space-y-1">
-      <div className="text-[10px] uppercase tracking-wide text-zinc-500">
-        Hooks bank
-      </div>
-      <ul className="space-y-1.5">
-        {visible.map((hook, i) => (
-          <HookRow key={i} index={i} hook={hook} expanded={expanded} />
-        ))}
-      </ul>
-      {!expanded && hooks.length > visible.length && (
-        <p className="text-[10px] text-zinc-500">
-          +{hooks.length - visible.length} more · expand to see all
-        </p>
       )}
     </div>
   );
 }
 
-function HookRow({
-  index,
-  hook,
-  expanded,
-}: {
-  index: number;
-  hook: HookEntry;
-  expanded: boolean;
-}) {
-  const [copied, setCopied] = React.useState(false);
-
-  const onCopy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(hook.text);
-      setCopied(true);
-      toast.success("Hook copied");
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Could not copy to clipboard");
-    }
-  };
-
-  const triggerStyle =
-    TRIGGER_STYLES[hook.trigger] ?? TRIGGER_STYLES.other;
-  const triggerLabel = TRIGGER_LABEL[hook.trigger] ?? hook.trigger;
-
+function HooksBankBody({ hooks }: { hooks: HookEntry[] }) {
   return (
-    <li className="rounded-md border border-white/5 bg-black/30 p-2">
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 inline-flex shrink-0 items-baseline text-[10px] font-semibold tabular-nums text-zinc-500">
-          {index + 1}.
-        </span>
-        <p
-          className={cn(
-            "min-w-0 flex-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-200",
-            expanded ? "" : "line-clamp-3",
-          )}
+    <ul className="flex flex-col gap-1.5">
+      {hooks.map((h, i) => (
+        <li
+          key={i}
+          className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200"
         >
-          {hook.text}
-        </p>
-        <div className="flex shrink-0 items-center gap-1">
-          <span
-            className={cn(
-              "rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-              triggerStyle,
-            )}
-          >
-            {triggerLabel}
-          </span>
-          <button
-            type="button"
-            className="nodrag rounded-md p-1 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-            onClick={onCopy}
-            title="Copy this hook"
-            aria-label="Copy this hook"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-emerald-400" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-          </button>
-        </div>
-      </div>
-    </li>
+          <div className="flex items-start gap-2">
+            <span className="text-[10px] font-semibold tabular-nums text-zinc-500 mt-0.5">
+              {i + 1}.
+            </span>
+            <p className="flex-1 whitespace-pre-wrap">{h.text}</p>
+            <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300">
+              {h.trigger}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
+
+const PORT_STYLE_LEFT: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 999,
+  background: "var(--port-bg)",
+  border: "1px solid rgba(0, 0, 0, 0.06)",
+  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
+  left: -13,
+  color: "rgba(255,255,255,0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 3,
+};
+
+// Suppress unused import warnings (Sparkles imported above but used only in
+// optional flows): React doesn't warn but keep static reference.
+void Sparkles;

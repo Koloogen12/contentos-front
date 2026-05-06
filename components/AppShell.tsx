@@ -5,13 +5,14 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   FolderKanban,
   LogOut,
   MoreHorizontal,
   Pencil,
   Plus,
   Settings,
-  Sparkles,
   LayoutGrid,
   Trash2,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { deleteProject, listProjects } from "@/lib/projects";
 import type { ProjectOut } from "@/lib/types";
+import { t } from "@/lib/i18n";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,66 +50,96 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  disabled?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutGrid },
-  { label: "Knowledge", href: "/knowledge", icon: BookOpen },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: t.shell.home, href: "/dashboard", icon: LayoutGrid },
+  { label: t.shell.knowledge, href: "/knowledge", icon: BookOpen },
+  { label: t.shell.settings, href: "/settings", icon: Settings },
 ];
 
-/** Pages where the projects sidebar filter applies. */
 const FILTERABLE_PATHS = ["/dashboard", "/knowledge"] as const;
+
+const SIDEBAR_KEY = "contentos.sidebar.collapsed";
+
+/**
+ * Pages that render their own immersive chrome (e.g. the canvas detail page
+ * has a fixed 52px topbar and full-bleed canvas). For these we skip the
+ * AppShell's sidebar + content padding entirely.
+ */
+function isImmersive(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return pathname.startsWith("/canvas/");
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+
+  const [collapsed, setCollapsed] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(SIDEBAR_KEY);
+    if (stored === "1") setCollapsed(true);
+  }, []);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
+
+  if (isImmersive(pathname)) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="hidden w-60 flex-col border-r border-border bg-card/40 lg:flex">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-5">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <span className="text-sm font-semibold tracking-tight">
-            ContentOS
-          </span>
+      <aside
+        className={cn(
+          "hidden flex-col border-r border-[color:var(--border-subtle)] bg-[color:var(--node-bg)]/40 lg:flex transition-[width] duration-150 ease-out",
+          collapsed ? "w-[56px]" : "w-60",
+        )}
+      >
+        <div className="flex h-14 items-center justify-between gap-2 border-b border-[color:var(--border-subtle)] px-3">
+          {!collapsed && (
+            <span className="text-[12px] font-bold tracking-[0.04em] text-foreground">
+              THE CONTENT
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+            aria-label={collapsed ? "Развернуть" : "Свернуть"}
+            title={collapsed ? "Развернуть" : "Свернуть"}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
           {NAV.map((item) => {
             const active =
-              !item.disabled &&
-              (pathname === item.href || pathname?.startsWith(`${item.href}/`));
+              pathname === item.href || pathname?.startsWith(`${item.href}/`);
             const Icon = item.icon;
-            const className = cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-              active
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-              item.disabled && "pointer-events-none opacity-40",
-            );
-            if (item.disabled) {
-              return (
-                <span key={item.href} className={className}>
-                  <Icon size={16} />
-                  {item.label}
-                  <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Soon
-                  </span>
-                </span>
-              );
-            }
             return (
-              <Link key={item.href} href={item.href} className={className}>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  collapsed && "justify-center px-2",
+                  active
+                    ? "bg-white/10 text-foreground"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                )}
+                title={collapsed ? item.label : undefined}
+              >
                 <Icon size={16} />
-                {item.label}
+                {!collapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
 
-          <ProjectsSection />
+          {!collapsed && <ProjectsSection />}
         </nav>
-        <div className="border-t border-border p-3 text-xs text-muted-foreground">
-          <p className="px-2">Iter D · Templates</p>
-        </div>
       </aside>
 
       <div className="flex flex-1 flex-col">
@@ -141,14 +173,11 @@ function ProjectsSection() {
   const [editing, setEditing] = React.useState<ProjectOut | null>(null);
   const [deleting, setDeleting] = React.useState<ProjectOut | null>(null);
 
-  /**
-   * Selecting a project routes to a filterable page (dashboard if we're on
-   * one of the listed paths, otherwise dashboard). Selecting "All" strips
-   * the `?project` search param.
-   */
   const navigateWithProject = React.useCallback(
     (projectId: string | null) => {
-      const targetPath = isFilterablePath ? pathname ?? "/dashboard" : "/dashboard";
+      const targetPath = isFilterablePath
+        ? pathname ?? "/dashboard"
+        : "/dashboard";
       const params = new URLSearchParams(searchParams.toString());
       if (projectId) params.set("project", projectId);
       else params.delete("project");
@@ -162,13 +191,13 @@ function ProjectsSection() {
     <div className="mt-4">
       <div className="flex items-center justify-between px-3 pb-1.5">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Projects
+          {t.shell.projects}
         </span>
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="rounded-md p-1 text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-          title="New project"
+          className="rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+          title={t.shell.newProject}
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -181,12 +210,12 @@ function ProjectsSection() {
             className={cn(
               "flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
               !selectedProjectId
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                ? "bg-white/10 text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
             )}
           >
             <FolderKanban className="h-3.5 w-3.5" />
-            <span>All</span>
+            <span>{t.shell.all}</span>
           </button>
         </li>
 
@@ -196,7 +225,7 @@ function ProjectsSection() {
           <li className="px-3 py-1 text-[11px] text-destructive">
             {query.error instanceof ApiError
               ? query.error.detail
-              : "Could not load projects"}
+              : "Не удалось загрузить проекты"}
           </li>
         ) : (
           (query.data ?? []).map((p) => (
@@ -259,8 +288,8 @@ function ProjectRow({
         className={cn(
           "flex w-full items-center gap-3 rounded-md px-3 py-1.5 pr-8 text-sm transition-colors",
           active
-            ? "bg-accent text-foreground"
-            : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+            ? "bg-white/10 text-foreground"
+            : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
         )}
       >
         <span
@@ -276,7 +305,7 @@ function ProjectRow({
             <button
               type="button"
               aria-label={`Project ${project.name} actions`}
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
@@ -289,7 +318,7 @@ function ProjectRow({
                 onEdit();
               }}
             >
-              <Pencil className="h-3.5 w-3.5" /> Rename / Recolor
+              <Pencil className="h-3.5 w-3.5" /> Переименовать
             </DropdownMenuItem>
             <DropdownMenuItem
               destructive
@@ -298,7 +327,7 @@ function ProjectRow({
                 onDelete();
               }}
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
+              <Trash2 className="h-3.5 w-3.5" /> Удалить
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -324,8 +353,7 @@ function DeleteProjectDialog({
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["canvases"] });
       qc.invalidateQueries({ queryKey: ["knowledge"] });
-      toast.success("Project deleted");
-      // If the deleted project was selected, drop it from the URL.
+      toast.success("Проект удалён");
       if (project && searchParams.get("project") === project.id) {
         const params = new URLSearchParams(searchParams.toString());
         params.delete("project");
@@ -336,7 +364,7 @@ function DeleteProjectDialog({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not delete project",
+        err instanceof ApiError ? err.detail : "Не удалось удалить",
       ),
   });
 
@@ -349,10 +377,10 @@ function DeleteProjectDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete project?</DialogTitle>
+          <DialogTitle>Удалить проект?</DialogTitle>
           <DialogDescription>
-            &ldquo;{project?.name}&rdquo; will be removed. Canvases and
-            knowledge items keep their data, but lose the project link.
+            «{project?.name}» будет удалён. Канвасы и заметки сохранятся, но
+            потеряют связь с проектом.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -361,14 +389,14 @@ function DeleteProjectDialog({
             onClick={onClose}
             disabled={mutation.isPending}
           >
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             variant="destructive"
             onClick={() => project && mutation.mutate(project.id)}
             disabled={mutation.isPending}
           >
-            {mutation.isPending ? "Deleting…" : "Delete"}
+            {mutation.isPending ? "Удаление…" : t.common.delete}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -392,13 +420,13 @@ function TopBar() {
   }, [user]);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-background/60 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/40">
+    <header className="flex h-14 items-center justify-between border-b border-[color:var(--border-subtle)] bg-background/60 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/40">
       <div className="text-xs text-muted-foreground">
         {organization ? organization.name : ""}
       </div>
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-accent">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+        <DropdownMenuTrigger className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-white/5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
             {initials || "?"}
           </div>
           <div className="hidden text-left text-sm md:block">
@@ -411,7 +439,7 @@ function TopBar() {
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Signed in</DropdownMenuLabel>
+          <DropdownMenuLabel>Аккаунт</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {
@@ -421,7 +449,7 @@ function TopBar() {
               }
             }}
           >
-            <LogOut className="h-4 w-4" /> Log out
+            <LogOut className="h-4 w-4" /> {t.auth.signOut}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

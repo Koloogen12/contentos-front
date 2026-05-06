@@ -50,14 +50,22 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // ContentOS canvas tokens (informational; canvas itself comes in Iter 2)
+        // Prototype canvas tokens (1:1 from THE CONTENT-2/styles.css)
         canvas: {
-          bg: "#000000",
-          surface: "#11140E",
-          node: "#1C1E20",
+          bg: "var(--canvas-bg)",
+          surface: "var(--canvas-surface)",
+          node: "var(--node-bg)",
+          toolbar: "var(--toolbar-bg)",
+        },
+        status: {
+          idle: "var(--status-idle)",
+          running: "var(--status-running)",
+          done: "var(--status-done)",
+          error: "var(--status-error)",
         },
       },
       borderRadius: {
+        node: "var(--node-radius)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
@@ -72,6 +80,9 @@ const config: Config = {
           "sans-serif",
         ],
       },
+      backdropBlur: {
+        chrome: "14px",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -85,11 +96,39 @@ const config: Config = {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
+        "pulse-dot": {
+          "0%, 100%": { opacity: "0.5", transform: "scale(1)" },
+          "50%": { opacity: "1", transform: "scale(1.25)" },
+        },
+        "edge-flow": {
+          to: { strokeDashoffset: "-24" },
+        },
+        "port-pulse": {
+          "0%, 100%": { transform: "translate(-50%, -50%) scale(1)" },
+          "50%": { transform: "translate(-50%, -50%) scale(1.18)" },
+        },
+        spin: {
+          to: { transform: "rotate(360deg)" },
+        },
+        "skel-shine": {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+        "picker-in": {
+          from: { opacity: "0", transform: "scale(0.96)" },
+          to: { opacity: "1", transform: "scale(1)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.2s ease-out",
+        "pulse-dot": "pulse-dot 1s infinite",
+        "edge-flow": "edge-flow 0.9s linear infinite",
+        "port-pulse": "port-pulse 1.4s ease-in-out infinite",
+        spin: "spin 0.7s linear infinite",
+        "skel-shine": "skel-shine 1.4s ease-in-out infinite",
+        "picker-in": "picker-in 0.13s ease-out",
       },
     },
   },

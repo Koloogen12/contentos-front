@@ -1,545 +1,536 @@
 "use client";
 
+/**
+ * SourceNode — 1:1 port of `THE CONTENT-2/nodes.jsx#SourceNode`.
+ * Width 296px, 4 tabs (Текст / URL / YouTube / Файл), platform+author
+ * for text/url, port-circle on the right.
+ */
+
 import * as React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useMutation } from "@tanstack/react-query";
 import {
+  ArrowRight,
   FileAudio,
-  Loader2,
-  Pencil,
+  FileUp,
+  Inbox,
+  Link as LinkIcon,
+  Mic,
   Type,
-  UploadCloud,
   Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import {
-  getYoutubeMeta,
-  transcribeYoutube,
-  uploadAudio,
-} from "@/lib/transcription";
+import { transcribeYoutube, uploadAudio } from "@/lib/transcription";
 import type { NodeOut, SourceInputType, SourceNodeData } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { cn } from "@/lib/utils";
-import { NODE_HANDLE_STYLE, NodeShell } from "./NodeShell";
+import { t, formatDurationRu } from "@/lib/i18n";
 
 interface SourceNodeRfData {
   node: NodeOut;
-  expanded: boolean;
-  onToggleExpanded: () => void;
 }
 
-type Mode = Extract<SourceInputType, "text" | "youtube" | "file_upload">;
-
-const MODE_OPTIONS: { value: Mode; label: string; icon: typeof Type }[] = [
-  { value: "text", label: "Text", icon: Type },
-  { value: "youtube", label: "YouTube", icon: Youtube },
-  { value: "file_upload", label: "Audio", icon: FileAudio },
-];
-
-function inferInitialMode(d: SourceNodeData): Mode {
-  if (d.input_type === "youtube" || d.youtube_url) return "youtube";
-  if (d.input_type === "file_upload" || d.file_name) return "file_upload";
-  return "text";
-}
-
-function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds || seconds <= 0) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  if (m < 60) return `${m}:${String(s).padStart(2, "0")}`;
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${h}:${String(mm).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (!bytes || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let v = bytes;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
+type Tab = "text" | "url" | "youtube" | "file_upload";
 
 export function SourceNode({ data, selected }: NodeProps) {
   const typed = data as unknown as SourceNodeRfData;
   const node = typed.node;
-  const expanded = typed.expanded;
-  const { updateNodeData, attachSkillRun, isRunning, readOnly } =
-    useCanvasNodeContext();
+  const { updateNodeData, isRunning, readOnly } = useCanvasNodeContext();
   const sourceData = (node.data ?? {}) as SourceNodeData;
+  const status = node.status;
   const running = isRunning(node.id);
-  const hasTranscript = Boolean(
-    sourceData.transcript_method && sourceData.content,
-  );
+  const inputType: Tab = (sourceData.input_type ?? "text") as Tab;
 
-  // Mode toggle (local; persisted via PATCH on change so the node remembers).
-  const [mode, setMode] = React.useState<Mode>(() => inferInitialMode(sourceData));
-  React.useEffect(() => {
-    setMode(inferInitialMode(sourceData));
-  }, [sourceData.input_type, sourceData.youtube_url, sourceData.file_name]);
-
-  // Text-mode draft mirrors the existing autosave-on-blur pattern.
-  const [draft, setDraft] = React.useState<string>(sourceData.content ?? "");
-  React.useEffect(() => {
-    setDraft(sourceData.content ?? "");
-  }, [sourceData.content]);
-
-  // YouTube mode local state.
-  const [youtubeUrl, setYoutubeUrl] = React.useState<string>(
-    sourceData.youtube_url ?? "",
-  );
-  React.useEffect(() => {
-    if (sourceData.youtube_url && sourceData.youtube_url !== youtubeUrl) {
-      setYoutubeUrl(sourceData.youtube_url);
-    }
-    // we intentionally don't depend on youtubeUrl — only sync when remote changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceData.youtube_url]);
-
-  const [meta, setMeta] = React.useState<{
-    title: string | null;
-    duration_seconds: number | null;
-    channel: string | null;
-  } | null>(null);
-
-  // Audio upload local state.
-  const [pendingFile, setPendingFile] = React.useState<File | null>(null);
-  const [uploadPct, setUploadPct] = React.useState<number | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  // Status text shown when a skill-run is in flight (transcription).
-  const [transcribeStatus, setTranscribeStatus] = React.useState<string | null>(
-    null,
-  );
-  React.useEffect(() => {
-    if (!running) setTranscribeStatus(null);
-  }, [running]);
-
-  const handleModeChange = async (next: Mode) => {
-    if (next === mode) return;
-    setMode(next);
-    if (sourceData.input_type !== next) {
-      await updateNodeData(node.id, { input_type: next });
-    }
+  const setData = async (patch: Partial<SourceNodeData>) => {
+    if (readOnly) return;
+    await updateNodeData(node.id, patch);
   };
 
-  const handleTextBlur = async () => {
-    const next = draft;
-    if ((sourceData.content ?? "") === next) return;
-    await updateNodeData(node.id, { content: next });
-  };
+  return (
+    <div className="relative" style={{ width: 296 }}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={INVISIBLE_HANDLE}
+      />
+      <div className="co-node-label">
+        <Inbox size={12} />
+        <span>{t.source.label}</span>
+      </div>
+      <div
+        className={cn(
+          "co-node-shell",
+          selected && "selected",
+          status === "running" && "running",
+          status === "done" && "done",
+          status === "error" && "error",
+        )}
+      >
+        <span className={`co-node-status-dot ${status ?? "idle"}`} />
 
-  // ----- YouTube actions -----
-  const metaMutation = useMutation({
-    mutationFn: (url: string) => getYoutubeMeta(node.id, url),
-    onSuccess: (data) => {
-      setMeta({
-        title: data.title,
-        duration_seconds: data.duration_seconds,
-        channel: data.channel,
-      });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.detail : "Could not fetch metadata",
-      ),
-  });
-
-  const transcribeMutation = useMutation({
-    mutationFn: (url: string) => transcribeYoutube(node.id, url),
-    onSuccess: ({ skill_run_id }) => {
-      setTranscribeStatus("Pulling captions…");
-      // After ~6s with no completion, hint that we may have fallen back to whisper.
-      window.setTimeout(() => {
-        setTranscribeStatus((prev) =>
-          prev === "Pulling captions…"
-            ? "Captions not found, transcribing audio…"
-            : prev,
-        );
-      }, 6000);
-      attachSkillRun(node.id, skill_run_id);
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.detail : "Could not start transcription",
-      ),
-  });
-
-  // ----- Audio upload actions -----
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) =>
-      uploadAudio(node.id, file, (pct) => setUploadPct(pct)),
-    onSuccess: ({ skill_run_id }) => {
-      setUploadPct(null);
-      setTranscribeStatus("Transcribing audio…");
-      attachSkillRun(node.id, skill_run_id);
-    },
-    onError: (err) => {
-      setUploadPct(null);
-      toast.error(
-        err instanceof ApiError ? err.detail : "Could not upload audio",
-      );
-    },
-  });
-
-  const subhead = React.useMemo(() => {
-    if (sourceData.youtube_url)
-      return `YouTube · ${sourceData.youtube_title ?? sourceData.youtube_url}`;
-    if (sourceData.file_name)
-      return `Audio · ${sourceData.file_name}`;
-    if (sourceData.transcript_method)
-      return `Transcribed via ${sourceData.transcript_method}`;
-    return null;
-  }, [
-    sourceData.youtube_url,
-    sourceData.youtube_title,
-    sourceData.file_name,
-    sourceData.transcript_method,
-  ]);
-
-  if (readOnly) {
-    // Public viewer: render just the content, scrubbed of YouTube URL,
-    // file metadata, and transcript-method tags. Text content stays.
-    const publicSubhead = sourceData.transcript_method
-      ? "Transcript"
-      : sourceData.input_type === "youtube"
-        ? "YouTube source"
-        : sourceData.input_type === "file_upload"
-          ? "Audio source"
-          : "Text";
-    const text = sourceData.content?.trim() ?? "";
-    return (
-      <>
-        <NodeShell
-          title="Source"
-          status={node.status}
-          selected={!!selected}
-          expanded={expanded}
-          onToggleExpanded={typed.onToggleExpanded}
-          subhead={publicSubhead}
-        >
-          {text ? (
-            <p
-              className={cn(
-                "whitespace-pre-wrap text-xs leading-relaxed text-zinc-300/90",
-                expanded ? "" : "line-clamp-4",
-              )}
-            >
-              {text}
-            </p>
-          ) : (
-            <p className="text-xs leading-relaxed text-zinc-500">
-              (No content)
-            </p>
-          )}
-        </NodeShell>
+        {/* Right output port — 26px circle */}
         <Handle
           type="source"
           position={Position.Right}
-          style={NODE_HANDLE_STYLE}
-        />
-      </>
-    );
-  }
+          className="co-port-handle"
+          style={PORT_STYLE_RIGHT}
+        >
+          <ArrowRight size={12} />
+        </Handle>
+
+        <div className="co-node-content">
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                { k: "text", label: t.source.tabs.text, Icon: Type },
+                { k: "url", label: t.source.tabs.url, Icon: LinkIcon },
+                { k: "youtube", label: t.source.tabs.youtube, Icon: Youtube },
+                { k: "file_upload", label: t.source.tabs.file, Icon: FileAudio },
+              ] as const
+            ).map(({ k, label, Icon }) => (
+              <button
+                key={k}
+                type="button"
+                className={cn("co-tab-pill", inputType === k && "active")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void setData({ input_type: k as SourceInputType });
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={readOnly || running}
+              >
+                <Icon size={11} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {inputType === "text" && (
+            <TextPanel
+              value={sourceData.content ?? ""}
+              onCommit={(v) => setData({ content: v })}
+              readOnly={readOnly}
+            />
+          )}
+          {inputType === "url" && (
+            <UrlPanel
+              value={sourceData.url ?? ""}
+              onCommit={(v) => setData({ url: v })}
+              readOnly={readOnly}
+            />
+          )}
+          {inputType === "youtube" && (
+            <YoutubePanel
+              data={sourceData}
+              setData={setData}
+              status={status}
+              nodeId={node.id}
+              readOnly={readOnly}
+            />
+          )}
+          {inputType === "file_upload" && (
+            <FilePanel
+              data={sourceData}
+              setData={setData}
+              status={status}
+              nodeId={node.id}
+              readOnly={readOnly}
+            />
+          )}
+
+          {(inputType === "text" || inputType === "url") && (
+            <>
+              <div>
+                <label className="co-field-label">{t.source.platformLabel}</label>
+                <select
+                  className="co-field-input"
+                  value={sourceData.platform ?? ""}
+                  onChange={(e) => void setData({ platform: e.target.value })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  disabled={readOnly}
+                >
+                  {t.source.platformOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="co-field-label">{t.source.authorLabel}</label>
+                <input
+                  className="co-field-input"
+                  type="text"
+                  placeholder={t.source.placeholders.handle}
+                  defaultValue={sourceData.author ?? ""}
+                  onBlur={(e) => {
+                    const next = e.target.value;
+                    if ((sourceData.author ?? "") !== next)
+                      void setData({ author: next });
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  disabled={readOnly}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TextPanel({
+  value,
+  onCommit,
+  readOnly,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  readOnly?: boolean;
+}) {
+  const [draft, setDraft] = React.useState(value);
+  React.useEffect(() => setDraft(value), [value]);
+  return (
+    <textarea
+      className="co-field-textarea nodrag"
+      placeholder={t.source.placeholders.text}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== value) onCommit(draft);
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      rows={4}
+      disabled={readOnly}
+    />
+  );
+}
+
+function UrlPanel({
+  value,
+  onCommit,
+  readOnly,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  readOnly?: boolean;
+}) {
+  const [draft, setDraft] = React.useState(value);
+  React.useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      className="co-field-input nodrag"
+      type="text"
+      placeholder={t.source.placeholders.url}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== value) onCommit(draft);
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      disabled={readOnly}
+    />
+  );
+}
+
+function YoutubePanel({
+  data,
+  setData,
+  status,
+  nodeId,
+  readOnly,
+}: {
+  data: SourceNodeData;
+  setData: (p: Partial<SourceNodeData>) => Promise<void>;
+  status: NodeOut["status"];
+  nodeId: string;
+  readOnly?: boolean;
+}) {
+  const { attachSkillRun, isRunning } = useCanvasNodeContext();
+  const running = isRunning(nodeId) || status === "running";
+  const [progress, setProgress] = React.useState(0);
+  const [draftUrl, setDraftUrl] = React.useState(data.youtube_url ?? "");
+  React.useEffect(() => setDraftUrl(data.youtube_url ?? ""), [data.youtube_url]);
+
+  React.useEffect(() => {
+    if (!running) {
+      setProgress(0);
+      return;
+    }
+    setProgress(0);
+    const t = setInterval(() => {
+      setProgress((p) => Math.min(98, p + 4 + Math.random() * 6));
+    }, 220);
+    return () => clearInterval(t);
+  }, [running]);
+
+  const transcribeMutation = useMutation({
+    mutationFn: (url: string) => transcribeYoutube(nodeId, url),
+    onSuccess: ({ skill_run_id }) => {
+      attachSkillRun(nodeId, skill_run_id);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.canvas.couldNotStartRun,
+      ),
+  });
+
+  const start = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!draftUrl.trim()) return;
+    if (draftUrl !== (data.youtube_url ?? "")) {
+      void setData({ youtube_url: draftUrl });
+    }
+    transcribeMutation.mutate(draftUrl.trim());
+  };
+
+  const stage =
+    progress < 30
+      ? t.source.progress.captions
+      : progress < 70
+        ? t.source.progress.audio
+        : t.source.progress.transcribing;
+
+  const showDone =
+    !running &&
+    status === "done" &&
+    !!(data.youtube_title || data.transcript_method || data.content);
 
   return (
     <>
-      <NodeShell
-        title="Source"
-        status={node.status}
-        selected={!!selected}
-        expanded={expanded}
-        onToggleExpanded={typed.onToggleExpanded}
-        subhead={subhead}
-      >
-        <div className="space-y-2.5">
-          {/* Mode toggle */}
-          <div className="nodrag flex items-center gap-1 rounded-md border border-white/5 bg-black/30 p-0.5">
-            {MODE_OPTIONS.map((opt) => {
-              const Icon = opt.icon;
-              const active = mode === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={cn(
-                    "flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                    active
-                      ? "bg-white/10 text-foreground"
-                      : "text-zinc-400 hover:text-zinc-200",
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleModeChange(opt.value);
-                  }}
-                  disabled={running || transcribeMutation.isPending}
-                >
-                  <Icon className="h-3 w-3" />
-                  {opt.label}
-                </button>
-              );
-            })}
+      <input
+        className="co-field-input nodrag"
+        type="text"
+        placeholder={t.source.placeholders.youtube}
+        value={draftUrl}
+        onChange={(e) => setDraftUrl(e.target.value)}
+        onBlur={() => {
+          if (draftUrl !== (data.youtube_url ?? ""))
+            void setData({ youtube_url: draftUrl });
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        disabled={readOnly || running}
+      />
+
+      {!running && !showDone && (
+        <button
+          className="co-btn co-btn-primary nodrag"
+          onClick={start}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={readOnly || !draftUrl.trim() || transcribeMutation.isPending}
+        >
+          <Mic size={14} />
+          {t.source.transcribe}
+        </button>
+      )}
+
+      {running && (
+        <>
+          <div className="co-spin-row">
+            <div className="co-spinner" />
+            <span>{stage}</span>
           </div>
+          <div className="co-progress">
+            <div className="co-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </>
+      )}
 
-          {/* While transcribing, surface a spinner + status message */}
-          {running && transcribeStatus ? (
-            <div className="flex items-center gap-2 rounded-md border border-white/5 bg-black/30 px-3 py-3 text-xs text-zinc-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-              <span>{transcribeStatus}</span>
-            </div>
-          ) : hasTranscript ? (
-            <TranscriptView
-              content={sourceData.content ?? ""}
-              method={sourceData.transcript_method ?? null}
-              expanded={expanded}
-              onConvert={async () => {
-                // Switch back to manual text editing — keep the content but
-                // clear the transcript-method marker so subhead/badge updates.
-                await updateNodeData(node.id, {
-                  input_type: "text",
-                  transcript_method: null,
-                });
-                setMode("text");
+      {showDone && (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="co-meta-chip">
+              <Youtube size={11} />
+              {data.transcript_method === "youtube_captions"
+                ? t.source.captionsBadge
+                : t.source.whisperBadge}
+            </span>
+            {data.youtube_duration_seconds ? (
+              <span className="co-meta-chip">
+                {formatDurationRu(data.youtube_duration_seconds)}
+              </span>
+            ) : null}
+            {data.transcript_language && (
+              <span className="co-meta-chip">
+                {data.transcript_language.toUpperCase()}
+              </span>
+            )}
+          </div>
+          {data.youtube_title && (
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                lineHeight: 1.45,
               }}
-            />
-          ) : mode === "text" ? (
-            expanded ? (
-              <Textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={handleTextBlur}
-                placeholder="Paste a transcript, link, or rough notes…"
-                rows={6}
-                className="nodrag scrollbar-thin resize-none border-white/10 bg-black/40 text-xs leading-relaxed"
-              />
-            ) : (
-              <p className="line-clamp-3 min-h-[3rem] text-xs leading-relaxed text-zinc-300/90">
-                {sourceData.content?.trim() || (
-                  <span className="text-zinc-500">
-                    Paste a transcript, link, or rough notes…
-                  </span>
-                )}
-              </p>
-            )
-          ) : mode === "youtube" ? (
-            <div className="space-y-2">
-              <Input
-                value={youtubeUrl}
-                onChange={(e) => setYoutubeUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=…"
-                className="nodrag h-8 border-white/10 bg-black/40 text-xs"
-                onClick={(e) => e.stopPropagation()}
-                disabled={
-                  metaMutation.isPending || transcribeMutation.isPending
-                }
-              />
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="nodrag inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-medium text-zinc-200 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={
-                    !youtubeUrl.trim() ||
-                    metaMutation.isPending ||
-                    transcribeMutation.isPending
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    metaMutation.mutate(youtubeUrl.trim());
-                  }}
-                >
-                  {metaMutation.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : null}
-                  Fetch meta
-                </button>
-                <button
-                  type="button"
-                  className="nodrag inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={
-                    !youtubeUrl.trim() ||
-                    transcribeMutation.isPending ||
-                    running
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    transcribeMutation.mutate(youtubeUrl.trim());
-                  }}
-                >
-                  {transcribeMutation.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : null}
-                  Transcribe
-                </button>
-              </div>
-              {meta && (
-                <div className="space-y-0.5 rounded-md border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] text-zinc-300">
-                  {meta.title && (
-                    <div className="line-clamp-2 font-medium text-zinc-100">
-                      {meta.title}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-x-2 text-zinc-500">
-                    {meta.channel && <span>{meta.channel}</span>}
-                    {meta.duration_seconds ? (
-                      <span>{formatDuration(meta.duration_seconds)}</span>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            // Audio upload mode
-            <div className="space-y-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*,video/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setPendingFile(file);
-                }}
-              />
-              {pendingFile ? (
-                <div className="flex items-center gap-2 rounded-md border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] text-zinc-300">
-                  <FileAudio className="h-3.5 w-3.5 text-zinc-400" />
-                  <div className="min-w-0 flex-1">
-                    <div className="line-clamp-1">{pendingFile.name}</div>
-                    <div className="text-zinc-500">
-                      {formatBytes(pendingFile.size)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="nodrag rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPendingFile(null);
-                      if (fileInputRef.current)
-                        fileInputRef.current.value = "";
-                    }}
-                    disabled={uploadMutation.isPending}
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="nodrag flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-white/10 bg-black/30 px-3 py-3 text-[11px] text-zinc-400 hover:bg-black/40"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  Choose audio or video file
-                </button>
-              )}
-
-              {uploadPct !== null && (
-                <div className="space-y-1">
-                  <div className="h-1 overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full bg-indigo-500 transition-all"
-                      style={{ width: `${uploadPct}%` }}
-                    />
-                  </div>
-                  <div className="text-[10px] text-zinc-500">
-                    Uploading… {uploadPct}%
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="nodrag inline-flex w-full items-center justify-center gap-1 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={
-                  !pendingFile || uploadMutation.isPending || running
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (pendingFile) uploadMutation.mutate(pendingFile);
-                }}
-              >
-                {uploadMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <UploadCloud className="h-3 w-3" />
-                )}
-                {uploadMutation.isPending ? "Uploading…" : "Upload & transcribe"}
-              </button>
+            >
+              {data.youtube_title}
             </div>
           )}
-        </div>
-      </NodeShell>
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={NODE_HANDLE_STYLE}
-      />
+          {data.content && (
+            <div className="co-transcript-preview">
+              {data.content.slice(0, 200)}…
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }
 
-function TranscriptView({
-  content,
-  method,
-  expanded,
-  onConvert,
+function FilePanel({
+  data,
+  setData,
+  status,
+  nodeId,
+  readOnly,
 }: {
-  content: string;
-  method: string | null;
-  expanded: boolean;
-  onConvert: () => Promise<void>;
+  data: SourceNodeData;
+  setData: (p: Partial<SourceNodeData>) => Promise<void>;
+  status: NodeOut["status"];
+  nodeId: string;
+  readOnly?: boolean;
 }) {
-  const charCount = content.length;
-  const methodLabel =
-    method === "youtube_captions"
-      ? "captions"
-      : method === "whisper"
-        ? "whisper"
-        : "transcript";
+  const { attachSkillRun, isRunning } = useCanvasNodeContext();
+  const running = isRunning(nodeId) || status === "running";
+  const [progress, setProgress] = React.useState(0);
+  const [pendingFile, setPendingFile] = React.useState<File | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (!running) {
+      setProgress(0);
+      return;
+    }
+    setProgress(0);
+    const id = setInterval(() => {
+      setProgress((p) => Math.min(96, p + 5 + Math.random() * 5));
+    }, 200);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) =>
+      uploadAudio(nodeId, file, (pct) => setProgress(pct)),
+    onSuccess: ({ skill_run_id }) => {
+      attachSkillRun(nodeId, skill_run_id);
+    },
+    onError: (err) => {
+      toast.error(
+        err instanceof ApiError ? err.detail : t.canvas.couldNotStartRun,
+      );
+      setPendingFile(null);
+      void setData({ file_name: null, file_size_bytes: null });
+    },
+  });
+
+  const onPick = (file: File) => {
+    setPendingFile(file);
+    void setData({
+      file_name: file.name,
+      file_size_bytes: file.size,
+      file_type: file.type,
+    });
+    uploadMutation.mutate(file);
+  };
+
+  const sizeMb =
+    data.file_size_bytes != null
+      ? (data.file_size_bytes / 1e6).toFixed(1)
+      : null;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-          {charCount.toLocaleString()} chars · {methodLabel}
-        </span>
-      </div>
-      {expanded ? (
-        <Textarea
-          value={content}
-          readOnly
-          rows={8}
-          className="nodrag scrollbar-thin resize-none border-white/10 bg-black/40 text-xs leading-relaxed"
-        />
-      ) : (
-        <p className="line-clamp-3 min-h-[3rem] text-xs leading-relaxed text-zinc-300/90">
-          {content.length > 150 ? `${content.slice(0, 150)}…` : content}
-        </p>
-      )}
-      {expanded && (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*,video/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onPick(f);
+        }}
+      />
+
+      {!data.file_name && !running && (
         <button
           type="button"
-          className="nodrag inline-flex items-center gap-1 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-medium text-zinc-200 hover:bg-black/60"
+          className="co-dropzone nodrag"
           onClick={(e) => {
             e.stopPropagation();
-            void onConvert();
+            fileInputRef.current?.click();
           }}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={readOnly}
         >
-          <Pencil className="h-3 w-3" />
-          Convert to text
+          <FileUp size={20} />
+          <div>{t.source.dropzone.title}</div>
+          <div className="text-[11px] text-[color:var(--text-muted)]">
+            {t.source.dropzone.hint}
+          </div>
         </button>
       )}
-    </div>
+
+      {data.file_name && running && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {data.file_name}
+            {sizeMb ? (
+              <span style={{ color: "var(--text-muted)" }}> · {sizeMb} MB</span>
+            ) : null}
+          </div>
+          <div className="co-spin-row">
+            <div className="co-spinner" />
+            <span>{t.source.progress.whisper(Math.round(progress))}</span>
+          </div>
+          <div className="co-progress">
+            <div className="co-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </>
+      )}
+
+      {data.file_name && status === "done" && (
+        <>
+          <span className="co-meta-chip">
+            <FileAudio size={11} />
+            {data.file_name}
+          </span>
+          {data.content && (
+            <div className="co-transcript-preview">
+              {data.content.slice(0, 200)}…
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
+
+// React Flow handles need to remain in the DOM so the connection logic works,
+// but we want the prototype's port circle to be the visible affordance. The
+// visible right-side port is rendered via `Handle` + a pseudo-element style.
+const PORT_STYLE_RIGHT: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 999,
+  background: "var(--port-bg)",
+  border: "1px solid rgba(0, 0, 0, 0.06)",
+  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
+  right: -13,
+  color: "rgba(255,255,255,0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 3,
+};
+
+const INVISIBLE_HANDLE: React.CSSProperties = {
+  width: 1,
+  height: 1,
+  background: "transparent",
+  border: "none",
+  opacity: 0,
+};

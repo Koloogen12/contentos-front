@@ -16,11 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const schema = z.object({
-  email: z.string().email("Enter a valid email"),
+  email: z.string().email("Введи корректный email"),
   password: z
     .string()
-    .min(8, "Use at least 8 characters")
-    .max(128, "Maximum 128 characters"),
+    .min(8, "Минимум 8 символов")
+    .max(128, "Максимум 128 символов"),
   display_name: z.string().max(80).optional(),
   organization_name: z.string().max(80).optional(),
 });
@@ -84,28 +84,28 @@ function RegisterForm() {
     } catch (err) {
       if (err instanceof ApiError) {
         setServerError(
-          err.detail || "Could not create account. Please try again.",
+          err.detail || "Не удалось создать аккаунт. Попробуй ещё раз.",
         );
       } else {
-        setServerError("Network error. Please try again.");
+        setServerError("Ошибка сети. Попробуй ещё раз.");
       }
     }
   });
 
   return (
     <AuthCard
-      title="Create your workspace"
-      subtitle="Start shaping content pipelines on ContentOS."
+      title="Создать воркспейс"
+      subtitle="Начни строить контент-пайплайны в THE CONTENT."
       footer={
         <>
-          Already have an account?{" "}
+          Уже есть аккаунт?{" "}
           <Link
             href={
               next ? `/login?next=${encodeURIComponent(next)}` : "/login"
             }
             className="font-medium text-foreground hover:text-primary"
           >
-            Sign in
+            Войти
           </Link>
         </>
       }
@@ -126,12 +126,12 @@ function RegisterForm() {
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">Пароль</Label>
           <Input
             id="password"
             type="password"
             autoComplete="new-password"
-            placeholder="At least 8 characters"
+            placeholder="Минимум 8 символов"
             {...register("password")}
             aria-invalid={!!errors.password}
           />
@@ -144,25 +144,25 @@ function RegisterForm() {
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="display_name">
-              Display name{" "}
-              <span className="text-muted-foreground">(optional)</span>
+              Имя{" "}
+              <span className="text-muted-foreground">(необязательно)</span>
             </Label>
             <Input
               id="display_name"
               autoComplete="name"
-              placeholder="Danil"
+              placeholder="Данил"
               {...register("display_name")}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="organization_name">
-              Organization{" "}
-              <span className="text-muted-foreground">(optional)</span>
+              Организация{" "}
+              <span className="text-muted-foreground">(необязательно)</span>
             </Label>
             <Input
               id="organization_name"
               autoComplete="organization"
-              placeholder="Personal"
+              placeholder="Личный"
               {...register("organization_name")}
             />
           </div>
@@ -178,10 +178,10 @@ function RegisterForm() {
         <Button type="submit" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Creating account…
+              <Loader2 className="h-4 w-4 animate-spin" /> Создание…
             </>
           ) : (
-            "Create account"
+            "Создать аккаунт"
           )}
         </Button>
       </form>

@@ -18,9 +18,18 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     let cancelled = false;
+    // 8s ceiling on the rehydration handshake — if the API is unreachable,
+    // don't leave the whole app stuck on a "Loading workspace…" spinner.
+    const watchdog = setTimeout(() => {
+      if (!cancelled) {
+        logout();
+        setHydrating(false);
+      }
+    }, 8000);
     (async () => {
       const refreshToken = useAuthStore.getState().refreshToken;
       if (!refreshToken) {
+        clearTimeout(watchdog);
         setHydrating(false);
         return;
       }
@@ -37,11 +46,13 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
       } catch {
         if (!cancelled) logout();
       } finally {
+        clearTimeout(watchdog);
         if (!cancelled) setHydrating(false);
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(watchdog);
     };
   }, [logout, setHydrating, setMe, setTokens]);
 

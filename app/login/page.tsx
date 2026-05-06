@@ -16,8 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const schema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().email("Введи корректный email"),
+  password: z.string().min(1, "Пароль обязателен"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -63,20 +63,20 @@ function LoginForm() {
       router.replace(route);
     } catch (err) {
       if (err instanceof ApiError) {
-        setServerError(err.detail || "Could not sign in. Please try again.");
+        setServerError(err.detail || "Не удалось войти. Попробуй ещё раз.");
       } else {
-        setServerError("Network error. Please try again.");
+        setServerError("Ошибка сети. Попробуй ещё раз.");
       }
     }
   });
 
   return (
     <AuthCard
-      title="Welcome back"
-      subtitle="Sign in to your ContentOS workspace."
+      title="С возвращением"
+      subtitle="Войди в свой воркспейс THE CONTENT."
       footer={
         <>
-          New here?{" "}
+          Впервые здесь?{" "}
           <Link
             href={
               next
@@ -85,7 +85,7 @@ function LoginForm() {
             }
             className="font-medium text-foreground hover:text-primary"
           >
-            Create an account
+            Создать аккаунт
           </Link>
         </>
       }
@@ -106,7 +106,7 @@ function LoginForm() {
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">Пароль</Label>
           <Input
             id="password"
             type="password"
@@ -132,10 +132,10 @@ function LoginForm() {
         <Button type="submit" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
+              <Loader2 className="h-4 w-4 animate-spin" /> Вход…
             </>
           ) : (
-            "Sign in"
+            "Войти"
           )}
         </Button>
       </form>

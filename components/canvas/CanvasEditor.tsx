@@ -4,8 +4,6 @@ import * as React from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
-  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   addEdge,
@@ -25,7 +23,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BookOpen, Loader2, Zap } from "lucide-react";
+import { Loader2, Zap } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
 import { getCanvas, runAllOnCanvas } from "@/lib/canvases";
@@ -42,6 +40,7 @@ import type {
   NodeOut,
   NodeStatus,
   NodeType,
+  SourceInputType,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,11 +52,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CanvasNodeContext } from "./canvasContext";
-import { CanvasToolbar } from "./CanvasToolbar";
+import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar";
+import {
+  CanvasSwatches,
+  CanvasZoomControls,
+} from "./CanvasZoomControls";
+import { NodePicker, type NodePickerItem } from "./NodePicker";
 import { ExtractNode } from "./nodes/ExtractNode";
 import { FormatNode } from "./nodes/FormatNode";
 import { SourceNode } from "./nodes/SourceNode";
-import { KnowledgeSidebar } from "./KnowledgeSidebar";
+import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 interface CanvasEditorProps {
   canvas: CanvasDetail;
@@ -71,8 +76,6 @@ const NODE_TYPES: NodeTypes = {
 
 interface RfNodeData extends Record<string, unknown> {
   node: NodeOut;
-  expanded: boolean;
-  onToggleExpanded: () => void;
 }
 
 const VALID_EDGE_TYPES: Record<NodeType, NodeType[]> = {
@@ -98,10 +101,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const canvasId = canvas.id;
   const reactFlow = useReactFlow();
 
-  // ----- Local state mirrors of remote nodes/edges -----
-  const [expandedSet, setExpandedSet] = React.useState<Set<string>>(
-    () => new Set(),
-  );
   const [runningRuns, setRunningRuns] = React.useState<
     Record<string, string /* skillRunId */>
   >({});
@@ -111,42 +110,41 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(
     null,
   );
-
-  const toggleExpanded = React.useCallback((nodeId: string) => {
-    setExpandedSet((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) next.delete(nodeId);
-      else next.add(nodeId);
-      return next;
-    });
-  }, []);
+  const [tool, setTool] = React.useState<CanvasTool>("select");
+  const [pickerAt, setPickerAt] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const buildRfNode = React.useCallback(
     (n: NodeOut): RfNode<RfNodeData> => ({
       id: n.id,
       type: n.type,
       position: { x: n.position_x, y: n.position_y },
-      data: {
-        node: n,
-        expanded: expandedSet.has(n.id),
-        onToggleExpanded: () => toggleExpanded(n.id),
-      },
-      // We render handles in the custom node, not the default
+      data: { node: n },
       sourcePosition: undefined,
       targetPosition: undefined,
     }),
-    [expandedSet, toggleExpanded],
+    [],
   );
 
   const buildRfEdge = React.useCallback(
-    (e: EdgeOut): RfEdge => ({
-      id: e.id,
-      source: e.source_node_id,
-      target: e.target_node_id,
-      type: "default",
-      animated: false,
-      style: { stroke: "#6366f1", strokeWidth: 2 },
-    }),
+    (e: EdgeOut, runningSet: Set<string>): RfEdge => {
+      const isRunning =
+        runningSet.has(e.source_node_id) || runningSet.has(e.target_node_id);
+      return {
+        id: e.id,
+        source: e.source_node_id,
+        target: e.target_node_id,
+        type: "default",
+        animated: false,
+        className: isRunning ? "co-edge-running" : undefined,
+        style: {
+          stroke: "var(--edge-stroke)",
+          strokeWidth: 2,
+        },
+      };
+    },
     [],
   );
 
@@ -154,34 +152,40 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     canvas.nodes.map(buildRfNode),
   );
   const [rfEdges, setRfEdges] = React.useState<RfEdge[]>(() =>
-    canvas.edges.map(buildRfEdge),
+    canvas.edges.map((e) => buildRfEdge(e, new Set())),
   );
 
-  // Re-sync from server data when the underlying canvas object changes (refetch
-  // after a skill run, on hard reload, etc.). We preserve in-flight expanded state.
+  // Re-sync from server data
   const lastCanvasRef = React.useRef(canvas);
   React.useEffect(() => {
     if (canvas === lastCanvasRef.current) return;
     lastCanvasRef.current = canvas;
+    const runningSet = new Set(
+      canvas.nodes.filter((n) => n.status === "running").map((n) => n.id),
+    );
     setRfNodes(canvas.nodes.map(buildRfNode));
-    setRfEdges(canvas.edges.map(buildRfEdge));
+    setRfEdges(canvas.edges.map((e) => buildRfEdge(e, runningSet)));
   }, [canvas, buildRfNode, buildRfEdge]);
 
-  // When expanded set changes, propagate to existing rf nodes without
-  // rebuilding from scratch.
+  // Restyle edges when running set changes
   React.useEffect(() => {
-    setRfNodes((prev) =>
-      prev.map((n) => ({
-        ...n,
-        data: {
-          ...n.data,
-          expanded: expandedSet.has(n.id),
-        },
-      })),
+    const runningSet = new Set(Object.keys(runningRuns));
+    // Augment with locally-known node statuses
+    rfNodes.forEach((n) => {
+      if (n.data.node.status === "running") runningSet.add(n.id);
+    });
+    setRfEdges((prev) =>
+      prev.map((e) => {
+        const isRun = runningSet.has(e.source) || runningSet.has(e.target);
+        return {
+          ...e,
+          className: isRun ? "co-edge-running" : undefined,
+        };
+      }),
     );
-  }, [expandedSet]);
+  }, [runningRuns, rfNodes]);
 
-  // ----- Helpers to mutate rf nodes' embedded NodeOut snapshot -----
+  // ----- Node snapshot helpers -----
   const patchRfNodeSnapshot = React.useCallback(
     (nodeId: string, patcher: (prev: NodeOut) => NodeOut) => {
       setRfNodes((prev) =>
@@ -189,10 +193,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           n.id === nodeId
             ? {
                 ...n,
-                data: {
-                  ...n.data,
-                  node: patcher(n.data.node),
-                },
+                data: { ...n.data, node: patcher(n.data.node) },
               }
             : n,
         ),
@@ -208,7 +209,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [rfNodes],
   );
 
-  // ----- Position autosave (debounced per-node) -----
+  // ----- Position autosave -----
   const positionDebouncesRef = React.useRef<
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
@@ -217,43 +218,37 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     (nodeId: string, x: number, y: number) => {
       const existing = positionDebouncesRef.current.get(nodeId);
       if (existing) clearTimeout(existing);
-      const t = setTimeout(() => {
+      const tid = setTimeout(() => {
         positionDebouncesRef.current.delete(nodeId);
         void updateNode(nodeId, { position_x: x, position_y: y }).catch(
           (err) => {
             toast.error(
-              err instanceof ApiError
-                ? err.detail
-                : "Could not save node position",
+              err instanceof ApiError ? err.detail : "Не удалось сохранить позицию",
             );
           },
         );
       }, 300);
-      positionDebouncesRef.current.set(nodeId, t);
+      positionDebouncesRef.current.set(nodeId, tid);
     },
     [],
   );
 
   React.useEffect(() => {
     return () => {
-      // Flush all pending position saves on unmount.
-      positionDebouncesRef.current.forEach((t) => clearTimeout(t));
+      positionDebouncesRef.current.forEach((tid) => clearTimeout(tid));
       positionDebouncesRef.current.clear();
     };
   }, []);
 
-  // ----- React Flow event handlers -----
+  // ----- React Flow handlers -----
   const onNodesChange: OnNodesChange = React.useCallback((changes) => {
-    setRfNodes((prev) => {
-      const next = applyNodeChanges(changes, prev) as RfNode<RfNodeData>[];
-      return next;
-    });
-    // Track selection changes
+    setRfNodes(
+      (prev) => applyNodeChanges(changes, prev) as RfNode<RfNodeData>[],
+    );
     for (const ch of changes) {
       if (ch.type === "select") {
         if (ch.selected) setSelectedNodeId(ch.id);
-        else
-          setSelectedNodeId((cur) => (cur === ch.id ? null : cur));
+        else setSelectedNodeId((cur) => (cur === ch.id ? null : cur));
       }
     }
   }, []);
@@ -278,7 +273,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       }),
     onSuccess: (created) => {
       setRfEdges((prev) => {
-        // Replace the optimistic edge (which has a different id) with the real one.
         const filtered = prev.filter(
           (e) =>
             !(
@@ -287,11 +281,10 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               e.id.startsWith("optimistic-")
             ),
         );
-        return [...filtered, buildRfEdge(created)];
+        return [...filtered, buildRfEdge(created, new Set())];
       });
     },
     onError: (err, vars) => {
-      // Roll back the optimistic edge.
       setRfEdges((prev) =>
         prev.filter(
           (e) =>
@@ -303,7 +296,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         ),
       );
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not create connection",
+        err instanceof ApiError ? err.detail : "Не удалось создать связь",
       );
     },
   });
@@ -315,15 +308,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       const sourceNode = getNodeSnapshot(connection.source);
       const targetNode = getNodeSnapshot(connection.target);
       if (!sourceNode || !targetNode) return;
-
       if (!isValidConnectionTypes(sourceNode.type, targetNode.type)) {
         toast.error(
-          `Invalid connection: ${sourceNode.type} → ${targetNode.type}`,
+          `Недопустимое соединение: ${sourceNode.type} → ${targetNode.type}`,
         );
         return;
       }
-
-      // Optimistic add.
       const optimisticId = `optimistic-${connection.source}-${connection.target}-${Date.now()}`;
       setRfEdges((prev) =>
         addEdge(
@@ -331,12 +321,11 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             ...connection,
             id: optimisticId,
             type: "default",
-            style: { stroke: "#6366f1", strokeWidth: 2, opacity: 0.6 },
+            style: { stroke: "var(--edge-stroke)", strokeWidth: 2, opacity: 0.6 },
           },
           prev,
         ),
       );
-
       createEdgeMutation.mutate({
         source: connection.source,
         target: connection.target,
@@ -345,30 +334,22 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [createEdgeMutation, getNodeSnapshot],
   );
 
-  // ----- Edge delete (immediate, no confirm) -----
-  const onEdgesDelete = React.useCallback(
-    (edges: RfEdge[]) => {
-      for (const e of edges) {
-        if (e.id.startsWith("optimistic-")) continue;
-        void deleteEdge(e.id).catch((err) => {
-          toast.error(
-            err instanceof ApiError ? err.detail : "Could not delete edge",
-          );
-        });
-      }
-    },
-    [],
-  );
+  const onEdgesDelete = React.useCallback((edges: RfEdge[]) => {
+    for (const e of edges) {
+      if (e.id.startsWith("optimistic-")) continue;
+      void deleteEdge(e.id).catch((err) => {
+        toast.error(
+          err instanceof ApiError ? err.detail : "Не удалось удалить связь",
+        );
+      });
+    }
+  }, []);
 
-  // ----- Node delete (with confirm dialog) -----
-  // React Flow fires onNodesDelete after applyNodeChanges removes them locally.
-  // We block that path by *not* allowing the change in onNodesChange when we
-  // want to confirm. Simpler: listen for delete-key on selection ourselves.
+  // ----- Node delete via Backspace -----
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Backspace" && e.key !== "Delete") return;
       const target = e.target as HTMLElement | null;
-      // Don't intercept when typing in inputs
       if (
         target &&
         (target.tagName === "INPUT" ||
@@ -400,20 +381,25 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     },
     onError: (err) => {
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not delete node",
+        err instanceof ApiError ? err.detail : "Не удалось удалить ноду",
       );
       setPendingDelete(null);
     },
   });
 
-  // ----- Add node from toolbar -----
+  // ----- Add node from picker -----
   const createNodeMutation = useMutation({
-    mutationFn: (input: { type: NodeType; x: number; y: number }) =>
+    mutationFn: (input: {
+      type: NodeType;
+      x: number;
+      y: number;
+      presetType?: SourceInputType;
+    }) =>
       createNode(canvasId, {
         type: input.type,
         position_x: input.x,
         position_y: input.y,
-        data: defaultDataForType(input.type),
+        data: defaultDataForType(input.type, input.presetType),
       }),
     onSuccess: (created) => {
       setRfNodes((prev) => [...prev, buildRfNode(created)]);
@@ -421,41 +407,39 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not create node",
+        err instanceof ApiError ? err.detail : "Не удалось создать ноду",
       ),
   });
 
-  const handleAddNode = React.useCallback(
-    (type: NodeType) => {
-      // Use the React Flow viewport to drop new nodes near the user's view,
-      // staggered so they don't stack.
+  const handlePickerPick = React.useCallback(
+    (item: NodePickerItem) => {
       const viewport = reactFlow.getViewport();
-      // The screen-center in flow coordinates:
       const flowEl = document.querySelector(".react-flow") as HTMLElement | null;
       const rect = flowEl?.getBoundingClientRect();
       const centerScreen = rect
         ? { x: rect.width / 2, y: rect.height / 2 }
         : { x: 200, y: 200 };
-      // Inverse zoom transform.
       const baseX = (centerScreen.x - viewport.x) / viewport.zoom;
       const baseY = (centerScreen.y - viewport.y) / viewport.zoom;
       const offset = (rfNodes.length % 6) * 32;
       createNodeMutation.mutate({
-        type,
+        type: item.type,
         x: baseX - 160 + offset,
         y: baseY - 60 + offset,
+        presetType: item.presetType,
       });
+      setPickerAt(null);
     },
     [createNodeMutation, reactFlow, rfNodes.length],
   );
 
-  // ----- Update node data (used by node components on blur, hook selection, etc.) -----
+  // ----- Update node data -----
   const updateDataMutation = useMutation({
     mutationFn: (input: { nodeId: string; data: Record<string, unknown> }) =>
       updateNode(input.nodeId, { data: input.data }),
     onError: (err) => {
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not save changes",
+        err instanceof ApiError ? err.detail : "Не удалось сохранить изменения",
       );
     },
   });
@@ -468,7 +452,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         ...(snap.data as Record<string, unknown>),
         ...patch,
       };
-      // Optimistic UI update.
       patchRfNodeSnapshot(nodeId, (prev) => ({ ...prev, data: merged }));
       try {
         const updated = await updateDataMutation.mutateAsync({
@@ -477,7 +460,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         });
         patchRfNodeSnapshot(nodeId, () => updated);
       } catch {
-        // Rollback to original on failure.
         patchRfNodeSnapshot(nodeId, () => snap);
       }
     },
@@ -493,8 +475,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   );
 
   const subscriptionsRef = React.useRef<Map<string, () => void>>(new Map());
-
-  // Cleanup all in-flight subscriptions on unmount.
   React.useEffect(() => {
     return () => {
       subscriptionsRef.current.forEach((unsub) => unsub());
@@ -502,18 +482,11 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     };
   }, []);
 
-  /**
-   * Wire a skill-run id (whether from a /run or a transcription endpoint) into
-   * the canvas's polling lifecycle: tracks running state, refetches on
-   * complete, surfaces failures via toast.
-   */
   const attachSubscription = React.useCallback(
     (nodeId: string, skillRunId: string, successMessage: string) => {
-      // Already wired?
       if (subscriptionsRef.current.has(nodeId)) return;
       setLocalStatus(nodeId, "running");
       setRunningRuns((prev) => ({ ...prev, [nodeId]: skillRunId }));
-
       const unsub = subscribeSkillRun(skillRunId, {
         onComplete: async () => {
           try {
@@ -549,7 +522,6 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           toast.error(msg);
         },
       });
-
       subscriptionsRef.current.set(nodeId, unsub);
     },
     [canvasId, qc, setLocalStatus],
@@ -560,19 +532,18 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       const snap = getNodeSnapshot(nodeId);
       if (!snap) return;
       if (snap.type === "source") {
-        toast.error("Source nodes don't run skills");
+        toast.error("Source-ноды не запускают скиллы");
         return;
       }
       if (subscriptionsRef.current.has(nodeId)) return;
-
       try {
         setLocalStatus(nodeId, "running");
         const { skill_run_id } = await runNodeApi(nodeId);
-        attachSubscription(nodeId, skill_run_id, "Skill run completed");
+        attachSubscription(nodeId, skill_run_id, t.canvas.skillCompleted);
       } catch (err) {
         setLocalStatus(nodeId, "error");
         toast.error(
-          err instanceof ApiError ? err.detail : "Could not start skill run",
+          err instanceof ApiError ? err.detail : t.canvas.couldNotStartRun,
         );
       }
     },
@@ -581,12 +552,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
 
   const attachSkillRun = React.useCallback(
     (nodeId: string, skillRunId: string) => {
-      attachSubscription(nodeId, skillRunId, "Transcription complete");
+      attachSubscription(nodeId, skillRunId, t.canvas.transcriptionDone);
     },
     [attachSubscription],
   );
 
-  // ----- Bulk run-all -----
+  // ----- Run all -----
   const runnableCount = React.useMemo(() => {
     return rfNodes.filter(
       (n) => n.data.node.type === "extract" || n.data.node.type === "format",
@@ -597,14 +568,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     mutationFn: () => runAllOnCanvas(canvasId),
     onSuccess: async (result) => {
       const started = result.skill_runs.length;
-      toast.success(
-        `Started ${started} ${started === 1 ? "run" : "runs"} · Skipped ${
-          result.skipped
-        }`,
-      );
-      // Wire each started run to the per-node subscription pipeline. The
-      // backend response carries `skill_run_id` only — resolve `node_id`
-      // lazily via GET /skill-runs/{id} when missing.
+      toast.success(`Запущено ${started}, пропущено ${result.skipped}`);
       await Promise.all(
         result.skill_runs.map(async (s) => {
           let nodeId = s.node_id;
@@ -616,33 +580,29 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               return;
             }
           }
-          attachSubscription(
-            nodeId,
-            s.skill_run_id,
-            "Skill run completed",
-          );
+          attachSubscription(nodeId, s.skill_run_id, t.canvas.skillCompleted);
         }),
       );
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.detail : "Could not start bulk run",
+        err instanceof ApiError ? err.detail : "Не удалось запустить пайплайн",
       ),
   });
+
+  const onRunAll = React.useCallback(() => {
+    toast.info(t.canvas.pipelineStarted, { duration: 2400 });
+    runAllMutation.mutate();
+  }, [runAllMutation]);
 
   const isRunning = React.useCallback(
     (nodeId: string) => !!runningRuns[nodeId],
     [runningRuns],
   );
 
-  // ----- Sidebar toggle -----
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
-  const selectedNode = React.useMemo(
-    () => (selectedNodeId ? getNodeSnapshot(selectedNodeId) ?? null : null),
-    [selectedNodeId, getNodeSnapshot],
-  );
+  const pipelineRunning =
+    Object.keys(runningRuns).length > 0 || runAllMutation.isPending;
 
-  // ----- Render -----
   const ctxValue = React.useMemo(
     () => ({
       updateNodeData,
@@ -666,89 +626,87 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
 
   return (
     <CanvasNodeContext.Provider value={ctxValue}>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="relative flex-1 bg-[#000]">
-          <CanvasToolbar
-            onAddNode={handleAddNode}
-            busy={createNodeMutation.isPending}
-          />
-          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => runAllMutation.mutate()}
-              disabled={runAllMutation.isPending || runnableCount === 0}
-              title={
-                runnableCount === 0
-                  ? "No extract or format nodes on this canvas"
-                  : "Run every runnable extract/format node"
-              }
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#11140E]/95 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-xl backdrop-blur hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {runAllMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Zap className="h-3.5 w-3.5" />
-              )}
-              Run all
-            </button>
-            {!sidebarOpen && (
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#11140E]/95 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-xl backdrop-blur hover:bg-white/5"
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                Knowledge
-              </button>
-            )}
+      <div className="relative flex-1 co-canvas-surface">
+        {pipelineRunning && (
+          <div className="co-run-badge">
+            <Loader2 size={14} className="animate-spin" />
+            {t.canvas.pipelineRunning}
           </div>
-          <ReactFlow<RfNode<RfNodeData>, RfEdge>
-            nodes={rfNodes}
-            edges={rfEdges}
-            nodeTypes={NODE_TYPES}
-            onNodesChange={onNodesChange as (changes: NodeChange[]) => void}
-            onEdgesChange={onEdgesChange as (changes: EdgeChange[]) => void}
-            onConnect={onConnect}
-            onNodeDragStop={onNodeDragStop}
-            onEdgesDelete={onEdgesDelete}
-            // Disable React Flow's default Backspace delete — we handle it.
-            deleteKeyCode={null}
-            fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
-            proOptions={{ hideAttribution: true }}
-            colorMode="dark"
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={24}
-              size={1}
-              color="#1f2228"
-            />
-            <Controls
-              position="bottom-left"
-              showInteractive={false}
-              className="!bg-[#11140E] !border-white/10 [&_button]:!bg-[#11140E] [&_button]:!border-white/10 [&_button]:!text-zinc-300 [&_button:hover]:!bg-white/5"
-            />
-            <MiniMap
-              position="bottom-right"
-              pannable
-              zoomable
-              className="!bg-[#11140E] !border-white/10"
-              nodeColor={(n) => {
-                if (n.type === "source") return "#3b82f6";
-                if (n.type === "extract") return "#8b5cf6";
-                if (n.type === "format") return "#10b981";
-                return "#6366f1";
-              }}
-              maskColor="rgba(0,0,0,0.6)"
-            />
-          </ReactFlow>
-        </div>
-        {sidebarOpen && (
-          <KnowledgeSidebar
-            selectedNode={selectedNode}
-            onClose={() => setSidebarOpen(false)}
-            canvasProjectId={canvas.project_id}
+        )}
+
+        {/* Run-all action — top-right */}
+        <button
+          type="button"
+          onClick={onRunAll}
+          disabled={runAllMutation.isPending || runnableCount === 0}
+          title={
+            runnableCount === 0
+              ? "Нет нод для запуска"
+              : t.canvas.runAll
+          }
+          className={cn(
+            "absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-xs font-medium text-white backdrop-blur",
+            "hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50",
+          )}
+        >
+          {runAllMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Zap className="h-3.5 w-3.5" />
+          )}
+          {t.canvas.runAll}
+        </button>
+
+        <ReactFlow<RfNode<RfNodeData>, RfEdge>
+          nodes={rfNodes}
+          edges={rfEdges}
+          nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange as (changes: NodeChange[]) => void}
+          onEdgesChange={onEdgesChange as (changes: EdgeChange[]) => void}
+          onConnect={onConnect}
+          onNodeDragStop={onNodeDragStop}
+          onEdgesDelete={onEdgesDelete}
+          deleteKeyCode={null}
+          fitView
+          fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
+          proOptions={{ hideAttribution: true }}
+          colorMode="dark"
+          panOnDrag={tool === "pan" || tool === "select"}
+          panOnScroll
+          selectionOnDrag={tool === "select"}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={11}
+            size={0.75}
+            color="rgba(255,255,255,0.1)"
+          />
+        </ReactFlow>
+
+        {/* Bottom-center toolbar */}
+        <CanvasToolbar
+          tool={tool}
+          setTool={setTool}
+          onAddNode={() =>
+            setPickerAt({
+              x: window.innerWidth / 2 - 128,
+              y: window.innerHeight - 380,
+            })
+          }
+        />
+
+        {/* Bottom-left zoom */}
+        <CanvasZoomControls />
+
+        {/* Bottom-right swatches */}
+        <CanvasSwatches />
+
+        {pickerAt && (
+          <NodePicker
+            x={pickerAt.x}
+            y={pickerAt.y}
+            onPick={handlePickerPick}
+            onClose={() => setPickerAt(null)}
           />
         )}
       </div>
@@ -759,10 +717,9 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete node?</DialogTitle>
+            <DialogTitle>Удалить ноду?</DialogTitle>
             <DialogDescription>
-              This removes the {pendingDelete?.type} node and all of its
-              connections. This cannot be undone.
+              Будет удалена нода и все её связи. Действие необратимо.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -771,7 +728,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               onClick={() => setPendingDelete(null)}
               disabled={deleteNodeMutation.isPending}
             >
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -780,7 +737,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               }
               disabled={deleteNodeMutation.isPending}
             >
-              {deleteNodeMutation.isPending ? "Deleting…" : "Delete"}
+              {deleteNodeMutation.isPending ? "Удаление…" : t.common.delete}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -789,9 +746,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   );
 }
 
-function defaultDataForType(type: NodeType): Record<string, unknown> {
+function defaultDataForType(
+  type: NodeType,
+  presetType?: SourceInputType,
+): Record<string, unknown> {
   if (type === "source") {
-    return { input_type: "text", content: "" };
+    return { input_type: presetType ?? "text", content: "" };
   }
   if (type === "extract") {
     return { talking_points: [], selected_index: null };

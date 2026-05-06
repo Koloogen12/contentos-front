@@ -1,68 +1,99 @@
 "use client";
 
+/**
+ * CanvasToolbar — 1:1 port of `THE CONTENT-2/chrome.jsx#CanvasToolbar`.
+ * Pill toolbar at bottom-center with select / pan / sticky / comment /
+ * text / arrow / + (add node).
+ */
+
 import * as React from "react";
-import { FileText, Plus, Sparkles, Wand2 } from "lucide-react";
-import type { NodeType } from "@/lib/types";
+import {
+  ArrowUpRight,
+  Hand,
+  MessageCircle,
+  MousePointer2,
+  Plus,
+  StickyNote,
+  Type,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+
+export type CanvasTool =
+  | "select"
+  | "pan"
+  | "note"
+  | "comment"
+  | "text"
+  | "arrow";
 
 interface CanvasToolbarProps {
-  onAddNode: (type: NodeType) => void;
-  busy?: boolean;
+  tool: CanvasTool;
+  setTool: (tool: CanvasTool) => void;
+  onAddNode: () => void;
 }
 
-export function CanvasToolbar({ onAddNode, busy }: CanvasToolbarProps) {
+export function CanvasToolbar({ tool, setTool, onAddNode }: CanvasToolbarProps) {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2">
-      <div
-        className={cn(
-          "pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-[#11140E]/95 p-1 shadow-xl backdrop-blur",
-          busy && "opacity-80",
-        )}
+    <div className="co-canvas-toolbar">
+      <ToolBtn k="select" tool={tool} setTool={setTool} title={`${t.toolbar.select} (V)`}>
+        <MousePointer2 size={18} />
+      </ToolBtn>
+      <ToolBtn k="pan" tool={tool} setTool={setTool} title={`${t.toolbar.pan} (Space)`}>
+        <Hand size={18} />
+      </ToolBtn>
+      <div className="co-toolbar-sep" />
+      <ToolBtn k="note" tool={tool} setTool={setTool} title={t.toolbar.note}>
+        <StickyNote size={18} />
+      </ToolBtn>
+      <ToolBtn
+        k="comment"
+        tool={tool}
+        setTool={setTool}
+        title={t.toolbar.comment}
       >
-        <ToolbarButton
-          label="Source"
-          icon={<FileText className="h-3.5 w-3.5" />}
-          onClick={() => onAddNode("source")}
-          disabled={busy}
-        />
-        <ToolbarButton
-          label="Extract"
-          icon={<Sparkles className="h-3.5 w-3.5" />}
-          onClick={() => onAddNode("extract")}
-          disabled={busy}
-        />
-        <ToolbarButton
-          label="Format"
-          icon={<Wand2 className="h-3.5 w-3.5" />}
-          onClick={() => onAddNode("format")}
-          disabled={busy}
-        />
-      </div>
+        <MessageCircle size={18} />
+      </ToolBtn>
+      <div className="co-toolbar-sep" />
+      <ToolBtn k="text" tool={tool} setTool={setTool} title={t.toolbar.text}>
+        <Type size={18} />
+      </ToolBtn>
+      <ToolBtn k="arrow" tool={tool} setTool={setTool} title={t.toolbar.arrow}>
+        <ArrowUpRight size={18} />
+      </ToolBtn>
+      <button
+        type="button"
+        className="co-toolbar-btn"
+        onClick={onAddNode}
+        title={t.toolbar.addNode}
+      >
+        <Plus size={18} />
+      </button>
     </div>
   );
 }
 
-function ToolbarButton({
-  label,
-  icon,
-  onClick,
-  disabled,
+function ToolBtn({
+  k,
+  tool,
+  setTool,
+  title,
+  children,
 }: {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
+  k: CanvasTool;
+  tool: CanvasTool;
+  setTool: (t: CanvasTool) => void;
+  title: string;
+  children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+      className={cn("co-toolbar-btn", tool === k && "active")}
+      title={title}
+      onClick={() => setTool(k)}
     >
-      <Plus className="h-3 w-3 text-zinc-400" aria-hidden />
-      {icon}
-      {label}
+      {children}
     </button>
   );
 }

@@ -1,22 +1,42 @@
 "use client";
 
+/**
+ * Settings — port of `THE CONTENT-2/phase3-screens.jsx#SettingsScreen`.
+ * Left sidebar with 6 sections, right content panel. Existing functional
+ * forms (BrandContext, VoiceTraining, TelegramTargets) live inside the
+ * appropriate sections.
+ */
+
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertTriangle, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  CreditCard,
+  Keyboard,
+  Loader2,
+  Mic,
+  Palette,
+  RefreshCw,
+  Save,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { getBrandContext, updateBrandContext } from "@/lib/brand-context";
+import { useAuthStore } from "@/stores/auth";
 import type { BrandContextOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
 import { VoiceTrainingSection } from "@/components/VoiceTrainingSection";
+import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
 
 const schema = z.object({
   author_name: z.string().optional(),
@@ -29,62 +49,315 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+type Section =
+  | "profile"
+  | "voice"
+  | "ai"
+  | "billing"
+  | "appearance"
+  | "shortcuts";
+
+const SECTIONS: { id: Section; label: string; Icon: LucideIcon }[] = [
+  { id: "profile", label: t.settings.sections.profile, Icon: User },
+  { id: "voice", label: t.settings.sections.voice, Icon: Mic },
+  { id: "ai", label: t.settings.sections.ai, Icon: Sparkles },
+  { id: "billing", label: t.settings.sections.billing, Icon: CreditCard },
+  { id: "appearance", label: t.settings.sections.appearance, Icon: Palette },
+  {
+    id: "shortcuts",
+    label: t.settings.sections.shortcuts,
+    Icon: Keyboard,
+  },
+];
+
 export default function SettingsPage() {
+  const router = useRouter();
+  const [tab, setTab] = React.useState<Section>("profile");
+
+  return (
+    <div className="co-settings-screen">
+      <div className="co-settings-topbar">
+        <button
+          type="button"
+          className="co-iconbtn"
+          onClick={() => router.push("/dashboard")}
+          title={t.settings.back}
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <div className="co-settings-title">{t.settings.title}</div>
+        <div style={{ width: 28 }} />
+      </div>
+      <div className="co-settings-layout">
+        <aside className="co-settings-sidebar">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={cn("co-settings-tab", tab === s.id && "active")}
+              onClick={() => setTab(s.id)}
+            >
+              <s.Icon size={15} />
+              {s.label}
+            </button>
+          ))}
+        </aside>
+        <main className="co-settings-content">
+          {tab === "profile" && <ProfileSection />}
+          {tab === "voice" && <VoiceSection />}
+          {tab === "ai" && <AISection />}
+          {tab === "billing" && <BillingSection />}
+          {tab === "appearance" && <AppearanceSection />}
+          {tab === "shortcuts" && <ShortcutsSection />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// Profile section — uses the existing BrandContext form (still drives the
+// AI brand voice). Visual chrome is the prototype profile card pattern.
+// =========================================================================
+function ProfileSection() {
+  const user = useAuthStore((s) => s.user);
   const query = useQuery({
     queryKey: ["brand-context"],
     queryFn: getBrandContext,
   });
 
+  const initials = React.useMemo(() => {
+    const source = user?.display_name || user?.email || "?";
+    return source
+      .split(/[\s@]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? "")
+      .join("");
+  }, [user]);
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-12 px-6 py-10">
-      <section id="brand-context-section" className="space-y-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Brand context
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            The voice, taboos, and manifesto that get injected into every AI
-            prompt run from this org.
-          </p>
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.profile}</div>
+      <div className="co-settings-sub">{t.settings.profile.sub}</div>
+      <div className="co-profile-row">
+        <div className="co-profile-avatar-lg">{initials}</div>
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 500,
+              color: "var(--text-primary)",
+              marginBottom: 4,
+            }}
+          >
+            {user?.display_name ?? user?.email ?? "—"}
+          </div>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: "var(--text-tertiary)",
+              marginBottom: 8,
+            }}
+          >
+            {user?.email}
+          </div>
+          <button
+            type="button"
+            className="co-btn co-btn-ghost"
+            style={{ fontSize: 11.5 }}
+          >
+            {t.settings.profile.replaceAvatar}
+          </button>
         </div>
+      </div>
 
-        <div>
-          {query.isPending ? (
-            <SettingsSkeleton />
-          ) : query.isError ? (
-            <ErrorBlock
-              detail={
-                query.error instanceof ApiError
-                  ? query.error.detail
-                  : "Could not load brand context."
-              }
-              onRetry={() => query.refetch()}
-            />
-          ) : query.data ? (
-            <BrandContextForm context={query.data} />
-          ) : null}
-        </div>
-      </section>
+      {query.isPending ? (
+        <SettingsSkeleton />
+      ) : query.isError ? (
+        <ErrorBlock
+          detail={
+            query.error instanceof ApiError
+              ? query.error.detail
+              : "Не удалось загрузить контекст бренда."
+          }
+          onRetry={() => query.refetch()}
+        />
+      ) : query.data ? (
+        <BrandContextForm context={query.data} />
+      ) : null}
+    </div>
+  );
+}
 
-      <div className="border-t border-border" />
-
-      <TelegramTargetsSection />
-
-      <div className="border-t border-border" />
-
+function VoiceSection() {
+  return (
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.voice}</div>
+      <div className="co-settings-sub">{t.settings.voice.sub}</div>
       <VoiceTrainingSection />
     </div>
   );
 }
 
+function AISection() {
+  const [selected, setSelected] = React.useState("claude");
+  return (
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.ai}</div>
+      <div className="co-settings-sub">{t.settings.ai.sub}</div>
+      <div className="co-ai-providers">
+        {t.settings.ai.providers.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={cn("co-ai-card", selected === p.id && "selected")}
+            onClick={() => setSelected(p.id)}
+          >
+            <div
+              className={cn("co-radio-circle", selected === p.id && "checked")}
+            >
+              {selected === p.id ? <span style={{ fontSize: 9 }}>✓</span> : null}
+            </div>
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div className="flex items-center gap-2">
+                <div style={{ fontSize: 13.5, fontWeight: 500 }}>{p.name}</div>
+                {p.badge && <span className="co-badge-pill">{p.badge}</span>}
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--text-tertiary)",
+                  marginTop: 3,
+                }}
+              >
+                {p.sub}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ marginTop: 28 }}>
+        <div className="co-voice-section-h">{t.settings.ai.apiKeyHeader}</div>
+        <div className="co-settings-field">
+          <input
+            className="co-field-input"
+            type="password"
+            placeholder="sk-ant-..."
+          />
+          <div
+            style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}
+          >
+            {t.settings.ai.apiKeyHint}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BillingSection() {
+  return (
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.billing}</div>
+      <div className="co-settings-sub">{t.settings.billing.sub}</div>
+      <div className="co-billing-card">
+        <div className="co-plan-pill">{t.settings.billing.pro}</div>
+        <div className="co-plan-price">
+          <span className="co-plan-price-num">$24</span>
+          <span className="co-plan-price-per">{t.settings.billing.perMonth}</span>
+        </div>
+        <div className="co-plan-charge">Следующее списание · 28 ноября 2025</div>
+      </div>
+      <div style={{ marginTop: 28 }}>
+        <TelegramTargetsSection />
+      </div>
+    </div>
+  );
+}
+
+function AppearanceSection() {
+  return (
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.appearance}</div>
+      <div className="co-settings-sub">{t.settings.appearance.sub}</div>
+      <div
+        style={{
+          fontSize: 12.5,
+          color: "var(--text-tertiary)",
+          padding: 14,
+          background: "rgba(255,255,255,0.025)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 12,
+        }}
+      >
+        {t.settings.appearance.stub}
+      </div>
+    </div>
+  );
+}
+
+function ShortcutsSection() {
+  return (
+    <div className="co-settings-block">
+      <div className="co-settings-h">{t.settings.sections.shortcuts}</div>
+      <div className="co-settings-sub">{t.settings.shortcuts.sub}</div>
+      {t.settings.shortcuts.groups.map((g) => (
+        <div key={g.title} style={{ marginBottom: 22 }}>
+          <div className="co-voice-section-h">{g.title}</div>
+          <div
+            style={{
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 10,
+              overflow: "hidden",
+            }}
+          >
+            {g.rows.map(([k, v], i) => (
+              <div
+                key={k}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "9px 14px",
+                  fontSize: 12.5,
+                  borderBottom:
+                    i < g.rows.length - 1
+                      ? "1px solid var(--border-subtle)"
+                      : "none",
+                }}
+              >
+                <span style={{ color: "var(--text-secondary)" }}>{k}</span>
+                <span
+                  style={{
+                    color: "var(--text-tertiary)",
+                    fontFamily: "ui-monospace, Menlo, monospace",
+                    fontSize: 11.5,
+                  }}
+                >
+                  {v}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// =========================================================================
+// Brand context form (existing wiring, just restyled with prototype tokens)
+// =========================================================================
 function BrandContextForm({ context }: { context: BrandContextOut }) {
   const qc = useQueryClient();
   const data = context.data ?? {};
+  const initialKeywords = (data.cta_keywords ?? []).join(", ");
+
   const {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isDirty },
+    formState: { isDirty, errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -93,172 +366,156 @@ function BrandContextForm({ context }: { context: BrandContextOut }) {
       manifesto: data.manifesto ?? "",
       voice_rules: data.voice_rules ?? "",
       taboo_list: data.taboo_list ?? "",
-      cta_keywords: (data.cta_keywords ?? []).join(", "),
+      cta_keywords: initialKeywords,
     },
   });
 
+  React.useEffect(() => {
+    reset({
+      author_name: data.author_name ?? "",
+      author_handle: data.author_handle ?? "",
+      manifesto: data.manifesto ?? "",
+      voice_rules: data.voice_rules ?? "",
+      taboo_list: data.taboo_list ?? "",
+      cta_keywords: initialKeywords,
+    });
+  }, [
+    data.author_name,
+    data.author_handle,
+    data.manifesto,
+    data.voice_rules,
+    data.taboo_list,
+    initialKeywords,
+    reset,
+  ]);
+
   const mutation = useMutation({
-    mutationFn: (values: FormValues) => {
-      const payload = {
+    mutationFn: (values: FormValues) =>
+      updateBrandContext({
         ...data,
         author_name: values.author_name?.trim() || undefined,
         author_handle: values.author_handle?.trim() || undefined,
-        manifesto: values.manifesto ?? "",
-        voice_rules: values.voice_rules ?? "",
-        taboo_list: values.taboo_list ?? "",
+        manifesto: values.manifesto?.trim() || undefined,
+        voice_rules: values.voice_rules?.trim() || undefined,
+        taboo_list: values.taboo_list?.trim() || undefined,
         cta_keywords: values.cta_keywords
           ? values.cta_keywords
               .split(",")
               .map((s) => s.trim())
               .filter(Boolean)
-          : [],
-      };
-      return updateBrandContext(payload);
-    },
-    onSuccess: (updated) => {
-      qc.setQueryData(["brand-context"], updated);
+          : undefined,
+      }),
+    onSuccess: (next) => {
+      qc.setQueryData(["brand-context"], next);
+      toast.success("Сохранено");
       reset({
-        author_name: updated.data.author_name ?? "",
-        author_handle: updated.data.author_handle ?? "",
-        manifesto: updated.data.manifesto ?? "",
-        voice_rules: updated.data.voice_rules ?? "",
-        taboo_list: updated.data.taboo_list ?? "",
-        cta_keywords: (updated.data.cta_keywords ?? []).join(", "),
+        author_name: next.data.author_name ?? "",
+        author_handle: next.data.author_handle ?? "",
+        manifesto: next.data.manifesto ?? "",
+        voice_rules: next.data.voice_rules ?? "",
+        taboo_list: next.data.taboo_list ?? "",
+        cta_keywords: (next.data.cta_keywords ?? []).join(", "),
       });
-      toast.success("Brand context saved");
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.detail : "Could not save"),
+      toast.error(err instanceof ApiError ? err.detail : "Не удалось сохранить"),
   });
 
-  const onSubmit = handleSubmit((values) => mutation.mutate(values));
-
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="author_name">Author name</Label>
-          <Input id="author_name" {...register("author_name")} />
+    <form
+      className="co-settings-fieldset"
+      onSubmit={handleSubmit((v) => mutation.mutate(v))}
+    >
+      <div className="grid grid-cols-2 gap-3">
+        <div className="co-settings-field">
+          <label htmlFor="author_name">{t.settings.profile.fields.name}</label>
+          <input
+            className="co-field-input"
+            id="author_name"
+            {...register("author_name")}
+          />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="author_handle">Author handle</Label>
-          <Input
+        <div className="co-settings-field">
+          <label htmlFor="author_handle">
+            {t.settings.profile.fields.handle}
+          </label>
+          <input
+            className="co-field-input"
             id="author_handle"
-            placeholder="@yourhandle"
+            placeholder="@kochnefff"
             {...register("author_handle")}
           />
         </div>
       </div>
-
-      <Field
-        id="voice_rules"
-        label="Voice rules"
-        description="Sentence length, vocabulary, signature phrases."
-        rows={4}
-        register={register("voice_rules")}
-        error={errors.voice_rules?.message}
-      />
-
-      <Field
-        id="taboo_list"
-        label="Taboos"
-        description="Words and topics to avoid. Plain prose."
-        rows={4}
-        register={register("taboo_list")}
-        error={errors.taboo_list?.message}
-      />
-
-      <Field
-        id="manifesto"
-        label="Manifesto / core beliefs"
-        description="The 3–5 ideas you keep coming back to."
-        rows={5}
-        register={register("manifesto")}
-        error={errors.manifesto?.message}
-      />
-
-      <div className="space-y-1.5">
-        <Label htmlFor="cta_keywords">
-          CTA keywords{" "}
-          <span className="text-muted-foreground">(comma-separated)</span>
-        </Label>
-        <Input
-          id="cta_keywords"
-          placeholder="STACK, QUESTIONS, WORK"
-          {...register("cta_keywords")}
+      <div className="co-settings-field">
+        <label htmlFor="manifesto">Манифест</label>
+        <textarea
+          className="co-field-input"
+          id="manifesto"
+          rows={4}
+          style={{ minHeight: 80, resize: "vertical" }}
+          {...register("manifesto")}
         />
       </div>
+      <div className="co-settings-field">
+        <label htmlFor="voice_rules">Правила голоса</label>
+        <textarea
+          className="co-field-input"
+          id="voice_rules"
+          rows={3}
+          style={{ minHeight: 70, resize: "vertical" }}
+          {...register("voice_rules")}
+        />
+      </div>
+      <div className="co-settings-field">
+        <label htmlFor="taboo_list">Табу</label>
+        <textarea
+          className="co-field-input"
+          id="taboo_list"
+          rows={3}
+          style={{ minHeight: 70, resize: "vertical" }}
+          {...register("taboo_list")}
+        />
+      </div>
+      <div className="co-settings-field">
+        <label htmlFor="cta_keywords">CTA-слова (через запятую)</label>
+        <input
+          className="co-field-input"
+          id="cta_keywords"
+          {...register("cta_keywords")}
+        />
+        {errors.cta_keywords && (
+          <div style={{ fontSize: 11, color: "var(--status-error)" }}>
+            {errors.cta_keywords.message}
+          </div>
+        )}
+      </div>
 
-      {mutation.error && (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          className="co-btn co-btn-primary"
+          disabled={!isDirty || mutation.isPending}
         >
-          {mutation.error instanceof ApiError
-            ? mutation.error.detail
-            : "Could not save."}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between border-t border-border pt-4">
-        <div className="text-xs text-muted-foreground">
-          <Sparkles className="mr-1 inline h-3 w-3" />
-          Version {context.version}
-        </div>
-        <Button type="submit" disabled={!isDirty || mutation.isPending}>
           {mutation.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Saving…
-            </>
+            <Loader2 size={13} className="animate-spin" />
           ) : (
-            <>
-              <Save className="h-4 w-4" /> Save changes
-            </>
+            <Save size={13} />
           )}
-        </Button>
+          {t.common.save}
+        </button>
       </div>
     </form>
   );
 }
 
-function Field({
-  id,
-  label,
-  description,
-  rows,
-  register,
-  error,
-}: {
-  id: string;
-  label: string;
-  description?: string;
-  rows: number;
-  register: ReturnType<ReturnType<typeof useForm<FormValues>>["register"]>;
-  error?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      {description && (
-        <p className="text-xs text-muted-foreground">{description}</p>
-      )}
-      <Textarea id={id} rows={rows} {...register} />
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
-
 function SettingsSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <Skeleton className="h-16" />
-        <Skeleton className="h-16" />
-      </div>
-      <Skeleton className="h-24" />
-      <Skeleton className="h-24" />
-      <Skeleton className="h-32" />
-      <Skeleton className="h-16" />
+    <div className="space-y-3">
+      <Skeleton className="h-4 w-1/3" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-20 w-full" />
     </div>
   );
 }
@@ -271,23 +528,11 @@ function ErrorBlock({
   onRetry: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/15 text-destructive">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-        <div>
-          <h3 className="text-base font-medium text-foreground">
-            Couldn&apos;t load brand context
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-        </div>
-      </div>
-      <div className="mt-5">
-        <Button onClick={onRetry} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4" /> Retry
-        </Button>
-      </div>
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
+      <div style={{ fontSize: 13, color: "var(--text-primary)" }}>{detail}</div>
+      <Button onClick={onRetry} variant="outline" size="sm" className="mt-3">
+        <RefreshCw className="h-4 w-4" /> {t.dash.retry}
+      </Button>
     </div>
   );
 }

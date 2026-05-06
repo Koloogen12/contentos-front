@@ -23,8 +23,8 @@ export function AuthCard({
           className="mb-10 flex items-center justify-center gap-2 text-foreground"
         >
           <Sparkles className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold tracking-tight">
-            ContentOS
+          <span className="text-lg font-bold tracking-[0.04em]">
+            THE CONTENT
           </span>
         </Link>
         <div className="rounded-2xl border border-border bg-card p-8 shadow-2xl">
