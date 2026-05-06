@@ -803,18 +803,45 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   }, [hasShownLocalToast]);
 
   const spawnClientObject = React.useCallback(
-    (kind: ClientObjectKind, flow: { x: number; y: number }) => {
+    (kind: ClientObjectKind, hint: { x: number; y: number }) => {
       const id = makeId();
       // Center the new object on the click position (subtract half-size).
       const halfW = kind === "note" ? 100 : kind === "comment" ? 120 : 40;
       const halfH = kind === "note" ? 80 : kind === "comment" ? 40 : 12;
       const defaultText =
         kind === "note" ? "Заметка..." : kind === "text" ? "Текст" : "";
+
+      // The click's flow-space position can land outside the visible
+      // viewport (esp. after fitView with one source node — the surface
+      // toolbar/sidebar areas correspond to negative flow coords). To
+      // guarantee the new object lands somewhere the user can see, fall
+      // back to viewport center if the click hint is far from origin.
+      const pane = document.querySelector(".react-flow__pane");
+      let spawnAt = hint;
+      if (pane) {
+        const paneRect = pane.getBoundingClientRect();
+        const center = reactFlow.screenToFlowPosition({
+          x: paneRect.left + paneRect.width / 2,
+          y: paneRect.top + paneRect.height / 2,
+        });
+        const dx = Math.abs(hint.x - center.x);
+        const dy = Math.abs(hint.y - center.y);
+        // If the click is more than half-viewport away from center in flow
+        // space (i.e. user clicked the chrome area, not visible pane),
+        // spawn at center instead so the object is on-screen.
+        const vp = reactFlow.getViewport();
+        const halfFlowW = paneRect.width / 2 / vp.zoom;
+        const halfFlowH = paneRect.height / 2 / vp.zoom;
+        if (dx > halfFlowW || dy > halfFlowH) {
+          spawnAt = center;
+        }
+      }
+
       const obj: ClientObject = {
         id,
         kind,
-        x: flow.x - halfW,
-        y: flow.y - halfH,
+        x: spawnAt.x - halfW,
+        y: spawnAt.y - halfH,
         text: defaultText,
         ...(kind === "note"
           ? { w: 200, h: 160, color: "#FFE082" }
@@ -827,14 +854,24 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       setTool("select");
       showLocalToastOnce();
     },
-    [showLocalToastOnce],
+    [reactFlow, showLocalToastOnce],
   );
+
+  // De-dup ref: both RF's onPaneClick and the wrapper's onPointerUp can
+  // fire from the same physical click. Whichever runs first marks this
+  // ref so the other one no-ops.
+  const lastActivationTsRef = React.useRef<number>(0);
 
   // Single click handler shared between RF's onPaneClick and our wrapper
   // div's mouse-up. RF v12 sometimes swallows left-clicks when panOnDrag
   // changes mid-render, so the wrapper is a defense-in-depth path.
   const handlePaneActivation = React.useCallback(
     (clientX: number, clientY: number) => {
+      const now = Date.now();
+      if (now - lastActivationTsRef.current < 200) {
+        return; // dedup — same physical click reaching us twice
+      }
+      lastActivationTsRef.current = now;
       let flowPos: { x: number; y: number };
       try {
         flowPos = reactFlow.screenToFlowPosition({ x: clientX, y: clientY });
@@ -900,31 +937,33 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [handlePaneActivation],
   );
 
-  // Wrapper-level fallback: when an active tool is set, listen on the wrapper
-  // and trigger creation if the click landed on the bare pane element.
-  // Necessary because RF can swallow onPaneClick during panOnDrag transitions.
+  // Wrapper-level fallback: when an active creation tool is set, listen
+  // on the wrapper and spawn an object as long as the click did NOT land
+  // on a real node, toolbar, minimap, dialog, picker, or any other UI
+  // element. RF v12 fires its onPaneClick only when the actual `.pane`
+  // div was the event target, but in practice physical clicks often land
+  // on the `.react-flow__edges` SVG that overlays the pane — so we use
+  // an inverted filter (NOT inside known UI), independent of `.pane`.
   const onWrapperPointerUp = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return; // left mouse only
       if (tool === "select" || tool === "pan") return;
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      // Only fire when the click actually landed on the empty canvas pane,
-      // not on a node, toolbar, minimap, picker, etc.
-      const onPane =
-        target.classList.contains("react-flow__pane") ||
-        target.closest(".react-flow__pane") !== null;
-      const insideNodeOrEdge =
-        target.closest(".react-flow__node") !== null ||
-        target.closest(".react-flow__edge") !== null ||
-        target.closest(".co-canvas-toolbar") !== null ||
-        target.closest(".react-flow__minimap") !== null ||
-        target.closest(".co-zoom-controls") !== null ||
-        target.closest(".co-node-picker") !== null ||
-        target.closest(".co-tweaks-panel") !== null ||
-        target.closest(".co-versions-panel") !== null;
-      if (insideNodeOrEdge) return;
-      if (!onPane) return;
+      const target = event.target as Element | null;
+      if (!target || !(target as HTMLElement).closest) return;
+      const t2 = target as HTMLElement;
+      const insideUi =
+        t2.closest(".react-flow__node") !== null ||
+        t2.closest(".co-canvas-toolbar") !== null ||
+        t2.closest(".react-flow__minimap") !== null ||
+        t2.closest(".react-flow__minimap-svg") !== null ||
+        t2.closest(".co-zoom-controls") !== null ||
+        t2.closest(".co-node-picker") !== null ||
+        t2.closest(".co-tweaks-panel") !== null ||
+        t2.closest(".co-versions-panel") !== null ||
+        t2.closest("[role='dialog']") !== null ||
+        // SVG className check fallback for minimap/edges
+        (t2 as unknown as { className?: { baseVal?: string } })?.className?.baseVal?.includes("minimap") === true;
+      if (insideUi) return;
       handlePaneActivation(event.clientX, event.clientY);
     },
     [tool, handlePaneActivation],
