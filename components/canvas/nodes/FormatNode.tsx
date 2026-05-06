@@ -215,7 +215,7 @@ export function FormatNode({ data, selected }: NodeProps) {
               disabled={readOnly || running}
             >
               <Play size={14} />
-              {t.format.runButton}
+              {t.format.runButtonByPlatform[platform] ?? t.format.runButton}
             </button>
           )}
 
@@ -223,7 +223,10 @@ export function FormatNode({ data, selected }: NodeProps) {
             <>
               <div className="co-spin-row">
                 <div className="co-spinner" />
-                <span>{t.format.runningStatus(PLATFORM_LABEL[platform])}</span>
+                <span>
+                  {t.format.runningStatusByPlatform[platform] ??
+                    t.format.runningStatus(PLATFORM_LABEL[platform])}
+                </span>
               </div>
               <div className="co-skeleton">
                 <div className="co-skeleton-line w90" />

@@ -830,12 +830,17 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [showLocalToastOnce],
   );
 
-  const onPaneClick = React.useCallback(
-    (event: React.MouseEvent) => {
-      const flowPos = reactFlow.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
+  // Single click handler shared between RF's onPaneClick and our wrapper
+  // div's mouse-up. RF v12 sometimes swallows left-clicks when panOnDrag
+  // changes mid-render, so the wrapper is a defense-in-depth path.
+  const handlePaneActivation = React.useCallback(
+    (clientX: number, clientY: number) => {
+      let flowPos: { x: number; y: number };
+      try {
+        flowPos = reactFlow.screenToFlowPosition({ x: clientX, y: clientY });
+      } catch {
+        return;
+      }
 
       // Tool-driven creation.
       if (tool === "note" || tool === "comment" || tool === "text") {
@@ -868,25 +873,61 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         if (
           last &&
           now - last.t < 280 &&
-          Math.abs(last.x - event.clientX) < 6 &&
-          Math.abs(last.y - event.clientY) < 6
+          Math.abs(last.x - clientX) < 6 &&
+          Math.abs(last.y - clientY) < 6
         ) {
-          // It's a double-click.
           lastPaneClickRef.current = null;
           setPicker({
-            mode: { kind: "at-point", x: event.clientX, y: event.clientY },
+            mode: { kind: "at-point", x: clientX, y: clientY },
             flowPosition: flowPos,
           });
           return;
         }
         lastPaneClickRef.current = {
           t: now,
-          x: event.clientX,
-          y: event.clientY,
+          x: clientX,
+          y: clientY,
         };
       }
     },
     [tool, arrowDraft, reactFlow, spawnClientObject, showLocalToastOnce],
+  );
+
+  const onPaneClick = React.useCallback(
+    (event: React.MouseEvent) => {
+      handlePaneActivation(event.clientX, event.clientY);
+    },
+    [handlePaneActivation],
+  );
+
+  // Wrapper-level fallback: when an active tool is set, listen on the wrapper
+  // and trigger creation if the click landed on the bare pane element.
+  // Necessary because RF can swallow onPaneClick during panOnDrag transitions.
+  const onWrapperPointerUp = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return; // left mouse only
+      if (tool === "select" || tool === "pan") return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      // Only fire when the click actually landed on the empty canvas pane,
+      // not on a node, toolbar, minimap, picker, etc.
+      const onPane =
+        target.classList.contains("react-flow__pane") ||
+        target.closest(".react-flow__pane") !== null;
+      const insideNodeOrEdge =
+        target.closest(".react-flow__node") !== null ||
+        target.closest(".react-flow__edge") !== null ||
+        target.closest(".co-canvas-toolbar") !== null ||
+        target.closest(".react-flow__minimap") !== null ||
+        target.closest(".co-zoom-controls") !== null ||
+        target.closest(".co-node-picker") !== null ||
+        target.closest(".co-tweaks-panel") !== null ||
+        target.closest(".co-versions-panel") !== null;
+      if (insideNodeOrEdge) return;
+      if (!onPane) return;
+      handlePaneActivation(event.clientX, event.clientY);
+    },
+    [tool, handlePaneActivation],
   );
 
   // ----- Cursor for active tool -----
@@ -1024,6 +1065,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       <div
         className="relative flex-1 co-canvas-surface"
         style={{ cursor: surfaceCursor }}
+        onPointerUp={onWrapperPointerUp}
       >
         {pipelineRunning && (
           <div className="co-run-badge">
@@ -1071,11 +1113,10 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           proOptions={{ hideAttribution: true }}
           colorMode="dark"
           panOnDrag={
-            // While placing client objects we must keep left-click free so
-            // onPaneClick fires. For "pan" and "select" tools we keep the
-            // default left-button pan; for other tools, enable middle/right
-            // button pan only ([1, 2]).
-            tool === "pan" || tool === "select" ? true : [1, 2]
+            // While placing client objects we MUST disable left-click pan so
+            // onPaneClick fires. For "pan" and "select" tools, default
+            // left-button pan; for creation tools, fully off (false).
+            tool === "pan" || tool === "select" ? true : false
           }
           panOnScroll
           selectionOnDrag={tool === "select"}
