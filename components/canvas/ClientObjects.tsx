@@ -425,6 +425,16 @@ export function makeRfNodeForClientObject(
     onDelete: (id: string) => void;
   },
 ): RfNode<ClientNodeRfData> {
+  // Explicit width/height: RF v12 keeps nodes visibility:hidden until it
+  // measures their bounds. When children are flexible (e.g. textarea),
+  // measurement can be deferred and the node never becomes visible. We
+  // pass measured size up front so RF unhides immediately.
+  const measured =
+    obj.kind === "note"
+      ? { width: obj.w ?? 200, height: obj.h ?? 160 }
+      : obj.kind === "comment"
+        ? { width: obj.w ?? 240, height: 100 }
+        : { width: obj.w ?? 120, height: 32 };
   return {
     id: obj.id,
     type:
@@ -438,6 +448,7 @@ export function makeRfNodeForClientObject(
     deletable: true,
     selectable: true,
     draggable: true,
+    ...measured,
   };
 }
 

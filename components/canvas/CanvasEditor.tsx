@@ -853,6 +853,15 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       setSelectedClientId(id);
       setTool("select");
       showLocalToastOnce();
+      // Re-fit the viewport so the new object is guaranteed visible
+      // (it may overlap existing server nodes; zooming out reveals it).
+      window.setTimeout(() => {
+        try {
+          reactFlow.fitView({ padding: 0.25, duration: 280 });
+        } catch {
+          /* viewport not ready — ignore */
+        }
+      }, 60);
     },
     [reactFlow, showLocalToastOnce],
   );
