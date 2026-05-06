@@ -153,6 +153,15 @@ export interface ArticleSection {
 export interface FormatNodeData {
   platform?: FormatPlatform;
   talking_point_text?: string;
+  /**
+   * Per-format-node selection of which upstream extract talking-point this
+   * format generates from. Set client-side; backend ignores it (extra JSON
+   * keys are accepted). The frontend uses it as the source of truth and
+   * patches the parent extract's `selected_index` to match before each run
+   * — the worker still reads the parent's `selected_index` to assemble
+   * skill input. See `FormatNode.tsx` and `CanvasEditor.tsx#runAll`.
+   */
+  source_talking_point_index?: number;
   hooks?: string[];
   selected_hook_index?: number;
   body?: string;

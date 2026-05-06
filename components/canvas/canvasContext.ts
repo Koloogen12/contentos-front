@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type {
+  CanvasDetail,
   NodeOut,
   NodeStatus,
   ExtractNodeData,
@@ -30,6 +31,13 @@ export interface CanvasNodeContextValue {
   setRunningStatus: (nodeId: string, status: NodeStatus) => void;
   /** Look up the live React-Flow-managed node snapshot. */
   getNode: (nodeId: string) => NodeOut | undefined;
+  /**
+   * Snapshot of the whole canvas (nodes + edges) — used by FormatNode to
+   * traverse the upstream extract for per-format talking-point selection.
+   * Returns `undefined` only during the brief render window before the
+   * editor has wired the live snapshot.
+   */
+  getCanvas: () => CanvasDetail | undefined;
   /** Returns true while a skill-run for this node is in flight. */
   isRunning: (nodeId: string) => boolean;
   /**

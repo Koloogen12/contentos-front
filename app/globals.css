@@ -754,6 +754,87 @@
 }
 
 /* =============================================================
+   EditableText primitive (Requirement B — inline edit-on-dblclick)
+============================================================= */
+.co-editable-readwrap {
+  position: relative;
+  display: inline-block;
+  cursor: text;
+}
+.co-editable-readwrap:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+.co-editable-pencil {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  opacity: 0;
+  color: var(--text-muted, rgba(247, 247, 248, 0.55));
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.co-editable-readwrap:hover .co-editable-pencil {
+  opacity: 0.75;
+}
+.co-editable-input,
+.co-editable-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 6px 8px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.co-editable-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.co-editable-input:focus,
+.co-editable-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.co-edit-saving {
+  opacity: 0.7;
+}
+
+/* =============================================================
+   FormatNode — idea picker + tezis pill (Requirement A)
+============================================================= */
+.co-tezis-pill {
+  position: absolute;
+  top: 8px;
+  right: 22px;
+  z-index: 2;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(192, 132, 252, 0.14);
+  color: #d8b4fe;
+  border: 1px solid rgba(192, 132, 252, 0.3);
+  border-radius: 999px;
+  padding: 2px 8px;
+  pointer-events: none;
+  user-select: none;
+}
+.co-idea-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.co-idea-picker .co-field-input {
+  appearance: none;
+  cursor: pointer;
+}
+
+/* =============================================================
    Buttons (1:1 prototype: btn-primary / btn-ghost / iconbtn)
 ============================================================= */
 .co-btn {

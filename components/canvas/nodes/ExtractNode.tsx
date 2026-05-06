@@ -23,8 +23,9 @@ import {
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { tweakNode, type ExtractTweakMode } from "@/lib/tweaks";
-import type { ExtractNodeData, NodeOut } from "@/lib/types";
+import type { ExtractNodeData, NodeOut, TalkingPoint } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
+import { EditableText } from "@/components/canvas/EditableText";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
@@ -60,6 +61,30 @@ export function ExtractNode({ data, selected }: NodeProps) {
     if (readOnly) return;
     if (selectedIdx === i) return;
     await updateNodeData(node.id, { selected_index: i });
+  };
+
+  // Editable talking points (Requirement B). PATCHes the whole
+  // talking_points array with the chosen item's `text` replaced. Other
+  // metadata (score, category, reasoning) is preserved verbatim.
+  const updateTalkingPointText = async (i: number, nextText: string) => {
+    if (readOnly) return;
+    const trimmed = nextText.trim();
+    if (!trimmed) {
+      toast.error("Тезис не может быть пустым");
+      throw new Error("empty");
+    }
+    const next: TalkingPoint[] = points.map((p, idx) =>
+      idx === i ? { ...p, text: trimmed } : p,
+    );
+    try {
+      await updateNodeData(node.id, { talking_points: next });
+      toast.success("Тезис обновлён");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.detail : "Не удалось сохранить тезис",
+      );
+      throw err;
+    }
   };
 
   return (
@@ -179,6 +204,7 @@ export function ExtractNode({ data, selected }: NodeProps) {
                     text={tp.text}
                     selected={selectedIdx === i}
                     onClick={() => void selectPoint(i)}
+                    onEditText={(next) => updateTalkingPointText(i, next)}
                     readOnly={!!readOnly}
                   />
                 ))}
@@ -257,6 +283,7 @@ function TalkingPointCard({
   text,
   selected,
   onClick,
+  onEditText,
   readOnly,
 }: {
   index: number;
@@ -265,20 +292,35 @@ function TalkingPointCard({
   text: string;
   selected: boolean;
   onClick: () => void;
+  onEditText: (next: string) => Promise<void>;
   readOnly: boolean;
 }) {
   const cls =
     score >= 17 ? "co-score-high" : score >= 13 ? "co-score-mid" : "co-score-low";
+  // Card wraps a clickable surface for selecting + an editable text region.
+  // Using a <div role="button"> instead of <button> so the inner textarea/
+  // pencil icon don't trip the "no nested button" rule.
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className={cn("co-tp-card nodrag", selected && "selected")}
       onClick={(e) => {
+        if ((e.target as HTMLElement).closest(".co-editable-readwrap")) return;
+        if ((e.target as HTMLElement).closest("textarea, input")) return;
         e.stopPropagation();
         if (!readOnly) onClick();
       }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          if ((e.target as HTMLElement).closest("textarea, input")) return;
+          e.preventDefault();
+          if (!readOnly) onClick();
+        }
+      }}
       onMouseDown={(e) => e.stopPropagation()}
-      disabled={readOnly}
+      aria-pressed={selected}
+      aria-disabled={readOnly}
     >
       <div className="co-tp-head">
         <span className="text-[10px] font-semibold tabular-nums text-[color:var(--text-muted)]">
@@ -287,12 +329,20 @@ function TalkingPointCard({
         <span className={cn("co-score-badge", cls)}>{score}</span>
         <span className="co-tp-category">{category}</span>
       </div>
-      <div className="co-tp-text">{text}</div>
+      <EditableText
+        value={text}
+        onSave={onEditText}
+        multiline
+        rows={3}
+        disabled={readOnly}
+        className="co-tp-text block w-full"
+        ariaLabel="Текст тезиса"
+      />
       <div className="co-tp-use-row">
         <span>{selected ? t.extract.used : ""}</span>
         <ArrowRight size={11} />
       </div>
-    </button>
+    </div>
   );
 }
 

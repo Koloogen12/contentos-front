@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import { Loader2, Zap } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
-import { getCanvas, runAllOnCanvas } from "@/lib/canvases";
+import { getCanvas as fetchCanvas, runAllOnCanvas } from "@/lib/canvases";
 import { createNode, deleteNode, updateNode } from "@/lib/nodes";
 import { createEdge, deleteEdge } from "@/lib/edges";
 import {
@@ -40,6 +40,8 @@ import {
 import type {
   CanvasDetail,
   EdgeOut,
+  ExtractNodeData,
+  FormatNodeData,
   NodeOut,
   NodeStatus,
   NodeType,
@@ -653,7 +655,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       const unsub = subscribeSkillRun(skillRunId, {
         onComplete: async () => {
           try {
-            const fresh = await getCanvas(canvasId);
+            const fresh = await fetchCanvas(canvasId);
             qc.setQueryData<CanvasDetail | undefined>(
               ["canvas", canvasId],
               fresh,
@@ -727,6 +729,30 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     ).length;
   }, [rfNodes]);
 
+  /**
+   * Detect whether the canvas has any extract with 2+ format children
+   * attached. When true, the per-format `source_talking_point_index`
+   * trick (patch parent → run) becomes racy under the server-side
+   * parallel run-all, so we fall back to a sequential client-driven
+   * coordinator.
+   */
+  const hasMultiFormatExtract = React.useCallback((): boolean => {
+    const counts = new Map<string, number>();
+    for (const e of canvas.edges) {
+      const src = canvas.nodes.find((n) => n.id === e.source_node_id);
+      const tgt = canvas.nodes.find((n) => n.id === e.target_node_id);
+      if (!src || !tgt) continue;
+      if (src.type !== "extract" || tgt.type !== "format") continue;
+      counts.set(src.id, (counts.get(src.id) ?? 0) + 1);
+    }
+    for (const c of counts.values()) {
+      if (c >= 2) return true;
+    }
+    return false;
+  }, [canvas.edges, canvas.nodes]);
+
+  const [sequentialRunning, setSequentialRunning] = React.useState(false);
+
   const runAllMutation = useMutation({
     mutationFn: () => runAllOnCanvas(canvasId),
     onSuccess: async (result) => {
@@ -753,10 +779,175 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       ),
   });
 
+  /**
+   * Sequential client-side run-all (Requirement A / D2).
+   *
+   * Used only when at least one extract has 2+ attached format nodes —
+   * those formats need different parent.selected_index values, so we
+   * cannot rely on the server-side parallel run-all. The flow:
+   *
+   *   1. Run every extract via the single-node /run endpoint and await
+   *      completion, so format runs see fresh talking_points.
+   *   2. For each format (in document order), PATCH its parent extract's
+   *      `selected_index` to the format's `source_talking_point_index`,
+   *      wait 250ms for cache propagation, then start /run and await
+   *      completion before moving on.
+   *   3. Show a single toast that updates as each format completes.
+   *
+   * Limitation: a format with no upstream extract is just /run'd as-is.
+   * If a parent extract /run fails, downstream formats still try to run
+   * against whatever (possibly stale) talking_points are present.
+   */
+  const runAllSequentially = React.useCallback(async () => {
+    setSequentialRunning(true);
+    try {
+      const snapshot = canvasSnapshotRef.current;
+      const nodes = snapshot.nodes;
+      const edges = snapshot.edges;
+      const extracts = nodes.filter((n) => n.type === "extract");
+      const formats = nodes.filter((n) => n.type === "format");
+
+      // 1. Run extracts (which have an upstream source). Skip extracts
+      // that already have talking_points from a previous run — re-running
+      // unnecessarily would lose user edits and is the user's call.
+      const extractRunPromises: Promise<void>[] = [];
+      for (const ex of extracts) {
+        const data = ex.data as ExtractNodeData;
+        if ((data.talking_points ?? []).length > 0 && ex.status === "done") {
+          continue;
+        }
+        // Only auto-run extracts that have an upstream source attached.
+        const hasSource = edges.some((e) => e.target_node_id === ex.id);
+        if (!hasSource) continue;
+        extractRunPromises.push(
+          new Promise<void>((resolve) => {
+            void (async () => {
+              try {
+                setLocalStatus(ex.id, "running");
+                const { skill_run_id } = await runNodeApi(ex.id);
+                attachSubscription(
+                  ex.id,
+                  skill_run_id,
+                  t.canvas.skillCompleted,
+                );
+                // Wait for extract to leave "running" via subscription.
+                await waitUntilNotRunning(ex.id);
+              } catch (err) {
+                toast.error(
+                  err instanceof ApiError
+                    ? err.detail
+                    : t.canvas.couldNotStartRun,
+                );
+                setLocalStatus(ex.id, "error");
+              } finally {
+                resolve();
+              }
+            })();
+          }),
+        );
+      }
+      await Promise.all(extractRunPromises);
+
+      // 2. Sequentially run each format with its own parent-selected idx.
+      const total = formats.length;
+      if (total === 0) return;
+      const toastId = `run-all-${canvasId}`;
+      toast.info(`Запускаю ${total} ${pluralPosts(total)}: 0/${total}`, {
+        id: toastId,
+        duration: Infinity,
+      });
+      let done = 0;
+      for (const fmt of formats) {
+        const fmtData = fmt.data as FormatNodeData;
+        // Find parent extract by re-reading the snapshot — it may have
+        // been updated by a previous format run's parent-PATCH.
+        const live = canvasSnapshotRef.current;
+        const parentEdge = live.edges.find(
+          (e) => e.target_node_id === fmt.id,
+        );
+        const parent =
+          parentEdge &&
+          live.nodes.find(
+            (n) => n.id === parentEdge.source_node_id && n.type === "extract",
+          );
+        if (parent) {
+          const parentData = parent.data as ExtractNodeData;
+          const desired =
+            typeof fmtData.source_talking_point_index === "number"
+              ? fmtData.source_talking_point_index
+              : (parentData.selected_index ?? 0);
+          if ((parentData.selected_index ?? null) !== desired) {
+            try {
+              await updateNodeData(parent.id, { selected_index: desired });
+            } catch {
+              // updateNodeData toasts; carry on with the run anyway.
+            }
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
+        try {
+          setLocalStatus(fmt.id, "running");
+          const { skill_run_id } = await runNodeApi(fmt.id);
+          attachSubscription(fmt.id, skill_run_id, t.canvas.skillCompleted);
+          await waitUntilNotRunning(fmt.id);
+        } catch (err) {
+          toast.error(
+            err instanceof ApiError
+              ? err.detail
+              : t.canvas.couldNotStartRun,
+          );
+          setLocalStatus(fmt.id, "error");
+        } finally {
+          done += 1;
+          toast.info(
+            `Запускаю ${total} ${pluralPosts(total)}: ${done}/${total}`,
+            { id: toastId, duration: Infinity },
+          );
+        }
+      }
+      toast.success(`Готово: ${done}/${total}`, { id: toastId, duration: 3000 });
+    } finally {
+      setSequentialRunning(false);
+    }
+  }, [canvasId, attachSubscription, setLocalStatus, updateNodeData]);
+
+  // Helper: poll local "running set" until the node leaves running. The
+  // `attachSubscription` subscribes to the SSE stream and clears the run
+  // entry on completion, so we can simply await that.
+  const runningRunsRef = React.useRef(runningRuns);
+  React.useEffect(() => {
+    runningRunsRef.current = runningRuns;
+  }, [runningRuns]);
+
+  const waitUntilNotRunning = React.useCallback(
+    (nodeId: string, timeoutMs = 120_000) =>
+      new Promise<void>((resolve) => {
+        const start = Date.now();
+        const check = () => {
+          if (!runningRunsRef.current[nodeId]) {
+            resolve();
+            return;
+          }
+          if (Date.now() - start > timeoutMs) {
+            resolve(); // bail out — the run can keep running in background
+            return;
+          }
+          setTimeout(check, 200);
+        };
+        // Give the subscription one tick to register the entry first.
+        setTimeout(check, 50);
+      }),
+    [],
+  );
+
   const onRunAll = React.useCallback(() => {
     toast.info(t.canvas.pipelineStarted, { duration: 2400 });
-    runAllMutation.mutate();
-  }, [runAllMutation]);
+    if (hasMultiFormatExtract()) {
+      void runAllSequentially();
+    } else {
+      runAllMutation.mutate();
+    }
+  }, [hasMultiFormatExtract, runAllSequentially, runAllMutation]);
 
   const isRunning = React.useCallback(
     (nodeId: string) => !!runningRuns[nodeId],
@@ -764,7 +955,28 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   );
 
   const pipelineRunning =
-    Object.keys(runningRuns).length > 0 || runAllMutation.isPending;
+    Object.keys(runningRuns).length > 0 ||
+    runAllMutation.isPending ||
+    sequentialRunning;
+
+  // Live canvas snapshot — kept in a ref so a stable `getCanvas` closure
+  // returns the latest server-side nodes/edges without forcing every
+  // FormatNode subtree to re-memoize on each canvas refetch. The shape
+  // mirrors the source-of-truth React-Flow snapshot for nodes (so optimistic
+  // local PATCHes show up) and uses the prop's edges array.
+  const canvasSnapshotRef = React.useRef<CanvasDetail>(canvas);
+  React.useEffect(() => {
+    canvasSnapshotRef.current = {
+      ...canvas,
+      nodes: rfNodes.map((n) => n.data.node),
+      edges: canvas.edges,
+    };
+  }, [canvas, rfNodes]);
+
+  const getCanvas = React.useCallback(
+    (): CanvasDetail | undefined => canvasSnapshotRef.current,
+    [],
+  );
 
   const ctxValue = React.useMemo(
     () => ({
@@ -775,6 +987,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       attachSkillRun,
       setRunningStatus: setLocalStatus,
       getNode: getNodeSnapshot,
+      getCanvas,
       isRunning,
     }),
     [
@@ -783,6 +996,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       attachSkillRun,
       setLocalStatus,
       getNodeSnapshot,
+      getCanvas,
       isRunning,
     ],
   );
@@ -1126,7 +1340,11 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         <button
           type="button"
           onClick={onRunAll}
-          disabled={runAllMutation.isPending || runnableCount === 0}
+          disabled={
+            runAllMutation.isPending ||
+            sequentialRunning ||
+            runnableCount === 0
+          }
           title={
             runnableCount === 0
               ? "Нет нод для запуска"
@@ -1137,7 +1355,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             "hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >
-          {runAllMutation.isPending ? (
+          {runAllMutation.isPending || sequentialRunning ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Zap className="h-3.5 w-3.5" />
@@ -1281,6 +1499,15 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       </Dialog>
     </CanvasNodeContext.Provider>
   );
+}
+
+function pluralPosts(n: number): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return "постов";
+  if (last === 1) return "пост";
+  if (last >= 2 && last <= 4) return "поста";
+  return "постов";
 }
 
 function defaultDataForType(

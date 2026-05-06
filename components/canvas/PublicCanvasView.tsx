@@ -227,6 +227,10 @@ function PublicCanvasInner({
         /* read-only */
       },
       getNode: getNodeSnapshot,
+      // Public viewer doesn't need full-canvas traversal for the
+      // FormatNode idea-picker (read-only), so this is intentionally
+      // a stable `undefined` getter.
+      getCanvas: () => undefined,
       isRunning: () => false,
       readOnly: true,
     }),
