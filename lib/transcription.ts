@@ -55,7 +55,7 @@ export function uploadAudio(
   return new Promise((resolve, reject) => {
     const { accessToken } = getAuthSnapshot();
     if (!accessToken) {
-      reject(new ApiError(401, "Sign in expired. Please sign in again."));
+      reject(new ApiError(401, "Сессия истекла. Войди снова."));
       return;
     }
 
@@ -75,12 +75,12 @@ export function uploadAudio(
     xhr.addEventListener("load", () => {
       if (xhr.status === 401) {
         reject(
-          new ApiError(401, "Sign in expired. Please sign in again."),
+          new ApiError(401, "Сессия истекла. Войди снова."),
         );
         return;
       }
       if (xhr.status < 200 || xhr.status >= 300) {
-        let detail = xhr.statusText || `Upload failed (${xhr.status})`;
+        let detail = xhr.statusText || `Не удалось загрузить (${xhr.status})`;
         try {
           const parsed = JSON.parse(xhr.responseText) as {
             detail?: unknown;
@@ -111,17 +111,17 @@ export function uploadAudio(
         reject(
           new ApiError(
             0,
-            err instanceof Error ? err.message : "Bad upload response",
+            err instanceof Error ? err.message : "Некорректный ответ сервера",
           ),
         );
       }
     });
 
     xhr.addEventListener("error", () => {
-      reject(new ApiError(0, "Network error during upload"));
+      reject(new ApiError(0, "Сетевая ошибка при загрузке"));
     });
     xhr.addEventListener("abort", () => {
-      reject(new ApiError(0, "Upload aborted"));
+      reject(new ApiError(0, "Загрузка отменена"));
     });
 
     const form = new FormData();

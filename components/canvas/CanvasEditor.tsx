@@ -15,6 +15,7 @@ import {
   type Connection,
   type Edge as RfEdge,
   type EdgeChange,
+  type MiniMapNodeProps,
   type Node as RfNode,
   type NodeChange,
   type NodeTypes,
@@ -106,6 +107,12 @@ function isValidConnectionTypes(source: NodeType, target: NodeType): boolean {
 }
 
 const TWEAKS_COLLAPSED_KEY = "contentos.tweaks-panel.collapsed";
+
+const MINI_TYPE_ABBR: Record<string, string> = {
+  source: "SRC",
+  extract: "EXT",
+  format: "FMT",
+};
 
 export function CanvasEditor(props: CanvasEditorProps) {
   return (
@@ -656,7 +663,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             toast.error(
               err instanceof ApiError
                 ? err.detail
-                : "Run completed but refresh failed",
+                : "Скилл завершён, но обновить канвас не удалось",
             );
           } finally {
             subscriptionsRef.current.delete(nodeId);
@@ -788,9 +795,9 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const showLocalToastOnce = React.useCallback(() => {
     if (hasShownLocalToast) return;
     setHasShownLocalToast(true);
-    toast.info("Заметка сохранена локально", {
+    toast.info("Заметка сохранена локально в твоём браузере", {
       description:
-        "Эти объекты сохраняются локально в твоём браузере (не на сервере).",
+        "Эти объекты живут только в этом браузере (не на сервере).",
       duration: 4500,
     });
   }, [hasShownLocalToast]);
@@ -798,12 +805,17 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const spawnClientObject = React.useCallback(
     (kind: ClientObjectKind, flow: { x: number; y: number }) => {
       const id = makeId();
+      // Center the new object on the click position (subtract half-size).
+      const halfW = kind === "note" ? 100 : kind === "comment" ? 120 : 40;
+      const halfH = kind === "note" ? 80 : kind === "comment" ? 40 : 12;
+      const defaultText =
+        kind === "note" ? "Заметка..." : kind === "text" ? "Текст" : "";
       const obj: ClientObject = {
         id,
         kind,
-        x: flow.x,
-        y: flow.y,
-        text: "",
+        x: flow.x - halfW,
+        y: flow.y - halfH,
+        text: defaultText,
         ...(kind === "note"
           ? { w: 200, h: 160, color: "#FFE082" }
           : kind === "comment"
@@ -922,6 +934,91 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [clientObjects],
   );
 
+  // ----- MiniMap: render mini node-shaped rects with type label -----
+  // We use the `nodeComponent` slot of MiniMap (RF v12). MiniMapNodeProps
+  // only carries {id, x, y, width, height, ...}, NOT the original node
+  // type or data. We resolve type via a ref keyed by id so the closure
+  // doesn't go stale on re-render.
+  const miniNodeMetaRef = React.useRef<
+    Map<string, { type: string; label: string }>
+  >(new Map());
+  React.useEffect(() => {
+    const map = new Map<string, { type: string; label: string }>();
+    for (const n of rfNodes) {
+      const node = n.data.node;
+      const platform = (node.data as { platform?: string }).platform;
+      let label = MINI_TYPE_ABBR[node.type];
+      if (typeof platform === "string" && platform.length > 0) {
+        label = platform.slice(0, 6);
+      }
+      map.set(n.id, { type: node.type, label });
+    }
+    for (const o of clientObjects) {
+      if (o.kind === "arrow") continue;
+      map.set(o.id, {
+        type: `co-${o.kind}`,
+        label: o.kind === "note" ? "note" : o.kind === "comment" ? "comm" : "txt",
+      });
+    }
+    miniNodeMetaRef.current = map;
+  }, [rfNodes, clientObjects]);
+
+  const MiniMapNode = React.useCallback(
+    (props: MiniMapNodeProps) => {
+      const meta = miniNodeMetaRef.current.get(props.id);
+      const type = meta?.type ?? "default";
+      const stroke =
+        type === "source"
+          ? "#60a5fa"
+          : type === "extract"
+            ? "#facc15"
+            : type === "format"
+              ? "#c084fc"
+              : type === "co-note"
+                ? "#FFE082"
+                : "rgba(255,255,255,0.45)";
+      const minW = 28;
+      const minH = 18;
+      const w = Math.max(props.width, minW);
+      const h = Math.max(props.height, minH);
+      // Font size: keep readable but proportional to the node box.
+      const fontSize = Math.max(7, Math.min(14, h * 0.45));
+      return (
+        <g>
+          <rect
+            x={props.x}
+            y={props.y}
+            width={w}
+            height={h}
+            rx={6}
+            fill="rgba(20,22,24,0.92)"
+            stroke={stroke}
+            strokeWidth={1.4}
+            shapeRendering={props.shapeRendering}
+          />
+          {meta && (
+            <text
+              x={props.x + w / 2}
+              y={props.y + h / 2 + fontSize / 3}
+              textAnchor="middle"
+              fontSize={fontSize}
+              fontWeight={600}
+              fill={stroke}
+              style={{
+                fontFamily: "system-ui, sans-serif",
+                pointerEvents: "none",
+                userSelect: "none",
+              }}
+            >
+              {meta.label}
+            </text>
+          )}
+        </g>
+      );
+    },
+    [],
+  );
+
   return (
     <CanvasNodeContext.Provider value={ctxValue}>
       <div
@@ -973,7 +1070,13 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
           proOptions={{ hideAttribution: true }}
           colorMode="dark"
-          panOnDrag={tool === "pan" || tool === "select"}
+          panOnDrag={
+            // While placing client objects we must keep left-click free so
+            // onPaneClick fires. For "pan" and "select" tools we keep the
+            // default left-button pan; for other tools, enable middle/right
+            // button pan only ([1, 2]).
+            tool === "pan" || tool === "select" ? true : [1, 2]
+          }
           panOnScroll
           selectionOnDrag={tool === "select"}
         >
@@ -983,24 +1086,19 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             size={0.75}
             color="rgba(255,255,255,0.1)"
           />
-          {/* B4: real MiniMap replaces colored swatches */}
+          {/* B2: MiniMap with custom nodeComponent — each minimap node
+              looks like a miniature of the real card (rounded outline,
+              type colour, text label). nodeComponent is supported by
+              @xyflow/react v12 (see MiniMap/types.d.ts → MiniMapNodeProps).
+              We resolve type → label via miniNodeMetaRef updated from
+              rfNodes/clientObjects above. */}
           <MiniMap
             pannable
             zoomable
             position="bottom-right"
             maskColor="rgba(0,0,0,0.6)"
-            nodeColor={(n) => {
-              switch (n.type) {
-                case "source":
-                  return "#3b82f6";
-                case "extract":
-                  return "#eab308";
-                case "format":
-                  return "#a855f7";
-                default:
-                  return "#52525b";
-              }
-            }}
+            nodeBorderRadius={6}
+            nodeComponent={MiniMapNode}
             style={{
               background: "rgba(20,22,24,0.92)",
               border: "1px solid rgba(255,255,255,0.08)",

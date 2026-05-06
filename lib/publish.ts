@@ -62,7 +62,7 @@ export function subscribePublishLog(
         return;
       }
       if (log.status === "failed") {
-        handlers.onError?.(log.error ?? "Publishing failed", log);
+        handlers.onError?.(log.error ?? "Публикация не удалась", log);
         return;
       }
       // pending / sending — keep polling
@@ -70,7 +70,7 @@ export function subscribePublishLog(
     } catch (err) {
       if (stopped) return;
       handlers.onError?.(
-        err instanceof Error ? err.message : "Could not fetch publish status",
+        err instanceof Error ? err.message : "Не удалось получить статус публикации",
       );
     }
   };

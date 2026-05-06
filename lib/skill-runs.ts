@@ -124,7 +124,7 @@ function subscribeViaSse(
             handlers.onError?.(
               err instanceof Error
                 ? err.message
-                : "Run completed but final fetch failed",
+                : "Скилл завершён, но обновить состояние не удалось",
             ),
           );
         });
@@ -132,13 +132,13 @@ function subscribeViaSse(
       void getSkillRun(skillRunId)
         .then((run) => {
           finish(() =>
-            handlers.onError?.(run.error ?? "Skill run failed"),
+            handlers.onError?.(run.error ?? "Скилл-ран завершился с ошибкой"),
           );
         })
         .catch((err: unknown) => {
           finish(() =>
             handlers.onError?.(
-              err instanceof Error ? err.message : "Skill run failed",
+              err instanceof Error ? err.message : "Скилл-ран завершился с ошибкой",
             ),
           );
         });
@@ -167,7 +167,7 @@ function subscribeViaSse(
           handlers.onError?.(
             err instanceof Error
               ? err.message
-              : "Run completed but final fetch failed",
+              : "Скилл завершён, но обновить состояние не удалось",
           ),
         );
       });
@@ -184,7 +184,7 @@ function subscribeViaSse(
     if (typeof data === "string" && data.length > 0) {
       const payload = parseJson<ErrorPayload>(data);
       finish(() =>
-        handlers.onError?.(payload?.message ?? "Skill run failed"),
+        handlers.onError?.(payload?.message ?? "Скилл-ран завершился с ошибкой"),
       );
       return;
     }
@@ -195,14 +195,14 @@ function subscribeViaSse(
             finish(() => handlers.onComplete?.(run));
           } else if (run.status === "failed") {
             finish(() =>
-              handlers.onError?.(run.error ?? "Skill run failed"),
+              handlers.onError?.(run.error ?? "Скилл-ран завершился с ошибкой"),
             );
           } else {
             // Stream dropped mid-flight and the run isn't terminal yet.
             // Surface as an error rather than hanging silently.
             finish(() =>
               handlers.onError?.(
-                "Lost connection to skill-run stream before completion",
+                "Соединение с потоком скилл-рана прервано",
               ),
             );
           }
@@ -212,7 +212,7 @@ function subscribeViaSse(
             handlers.onError?.(
               err instanceof Error
                 ? err.message
-                : "Could not fetch skill-run status",
+                : "Не удалось получить статус скилл-рана",
             ),
           );
         });
@@ -254,14 +254,14 @@ function subscribeViaPolling(
         return;
       }
       if (run.status === "failed") {
-        handlers.onError?.(run.error ?? "Skill run failed");
+        handlers.onError?.(run.error ?? "Скилл-ран завершился с ошибкой");
         return;
       }
       timer = setTimeout(tick, interval);
     } catch (err) {
       if (stopped) return;
       handlers.onError?.(
-        err instanceof Error ? err.message : "Could not fetch skill-run status",
+        err instanceof Error ? err.message : "Не удалось получить статус скилл-рана",
       );
     }
   };

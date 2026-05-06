@@ -360,8 +360,9 @@ function CanvasCard({
 
 /**
  * Lightweight per-canvas thumbnail. Lazy-loads the canvas detail (cached
- * for 30s) and renders a real mini-graph SVG with nodes coloured by type
- * and edges as curved lines between centers.
+ * for 30s) and renders a real mini-graph SVG with miniature nodes that
+ * mirror the real card style: outlined rounded-rect, type icon, optional
+ * platform label below.
  */
 function CanvasThumb({ canvasId }: { canvasId: string }) {
   const detail = useCanvasDetail(canvasId);
@@ -371,8 +372,38 @@ function CanvasThumb({ canvasId }: { canvasId: string }) {
 
 const THUMB_W = 240;
 const THUMB_H = 130;
-const NODE_W = 32;
-const NODE_H = 22;
+const NODE_W = 38;
+const NODE_H = 26;
+
+/** Compact platform/type label for the mini-strip below a node. */
+function platformLabel(n: NodeOut): string | null {
+  const platform = (n.data as { platform?: string }).platform;
+  if (typeof platform === "string" && platform.length > 0) {
+    switch (platform) {
+      case "telegram":
+        return "TG";
+      case "linkedin":
+        return "LI";
+      case "carousel":
+        return "карусель";
+      case "reels":
+        return "reels";
+      case "hooks":
+        return "хуки";
+      default:
+        return platform.slice(0, 8);
+    }
+  }
+  // Sources may carry input_type — show a hint.
+  if (n.type === "source") {
+    const it = (n.data as { input_type?: string }).input_type;
+    if (it === "youtube") return "YT";
+    if (it === "url") return "URL";
+    if (it === "file_upload") return "файл";
+    if (it === "text") return "текст";
+  }
+  return null;
+}
 
 function ThumbMiniGraph({
   nodes,
@@ -396,8 +427,8 @@ function ThumbMiniGraph({
   const bboxW = maxX - minX + NATIVE_W;
   const bboxH = maxY - minY + NATIVE_H;
 
-  const padX = 12;
-  const padY = 12;
+  const padX = 14;
+  const padY = 14;
   const scale = Math.min(
     (THUMB_W - padX * 2) / bboxW,
     (THUMB_H - padY * 2) / bboxH,
@@ -409,12 +440,22 @@ function ThumbMiniGraph({
 
   const positionsById = new Map<
     string,
-    { cx: number; cy: number; type: NodeOut["type"] }
+    {
+      cx: number;
+      cy: number;
+      type: NodeOut["type"];
+      label: string | null;
+    }
   >();
   for (const n of nodes) {
     const x = n.position_x * scale + offsetX + (NATIVE_W * scale) / 2;
     const y = n.position_y * scale + offsetY + (NATIVE_H * scale) / 2;
-    positionsById.set(n.id, { cx: x, cy: y, type: n.type });
+    positionsById.set(n.id, {
+      cx: x,
+      cy: y,
+      type: n.type,
+      label: platformLabel(n),
+    });
   }
 
   return (
@@ -435,44 +476,86 @@ function ThumbMiniGraph({
           <path
             key={e.id}
             d={path}
-            stroke="rgba(255,255,255,0.25)"
-            strokeWidth="1.2"
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth="1"
             fill="none"
           />
         );
       })}
       {Array.from(positionsById.entries()).map(([id, p]) => {
-        const fill = NODE_FILL[p.type];
         const stroke = NODE_STROKE[p.type];
+        const iconChar = NODE_ICON[p.type];
         return (
-          <rect
-            key={id}
-            x={p.cx - NODE_W / 2}
-            y={p.cy - NODE_H / 2}
-            width={NODE_W}
-            height={NODE_H}
-            rx={4}
-            fill={fill}
-            fillOpacity={0.3}
-            stroke={stroke}
-            strokeOpacity={0.6}
-            strokeWidth={0.7}
-          />
+          <g key={id}>
+            <rect
+              x={p.cx - NODE_W / 2}
+              y={p.cy - NODE_H / 2}
+              width={NODE_W}
+              height={NODE_H}
+              rx={6}
+              fill="rgba(20,22,24,0.92)"
+              stroke={stroke}
+              strokeOpacity={0.75}
+              strokeWidth={0.8}
+            />
+            <text
+              x={p.cx}
+              y={p.cy + 3}
+              textAnchor="middle"
+              fontSize={10}
+              fontWeight={600}
+              fill={stroke}
+              style={{ fontFamily: "system-ui, sans-serif" }}
+            >
+              {iconChar}
+            </text>
+            {p.label && (
+              <g>
+                <rect
+                  x={p.cx - NODE_W / 2}
+                  y={p.cy + NODE_H / 2 + 2}
+                  width={NODE_W}
+                  height={9}
+                  rx={2}
+                  fill="rgba(255,255,255,0.05)"
+                />
+                <text
+                  x={p.cx}
+                  y={p.cy + NODE_H / 2 + 9}
+                  textAnchor="middle"
+                  fontSize={7}
+                  fill="rgba(255,255,255,0.65)"
+                  style={{
+                    fontFamily: "system-ui, sans-serif",
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  {p.label}
+                </text>
+              </g>
+            )}
+          </g>
         );
       })}
     </svg>
   );
 }
 
-const NODE_FILL: Record<NodeOut["type"], string> = {
-  source: "#3b82f6",
-  extract: "#eab308",
-  format: "#a855f7",
-};
 const NODE_STROKE: Record<NodeOut["type"], string> = {
   source: "#60a5fa",
   extract: "#facc15",
   format: "#c084fc",
+};
+
+/**
+ * Single-character glyph used as the type icon inside the mini-rect.
+ * Picked to be readable at 10px and avoid emoji rendering quirks.
+ *  ⌫ inbox-ish caret for Source, ✦ for Extract sparkle, ✎ for Format pen.
+ */
+const NODE_ICON: Record<NodeOut["type"], string> = {
+  source: "▤",
+  extract: "✦",
+  format: "✎",
 };
 
 function ThumbPlaceholder() {
@@ -491,10 +574,20 @@ function ThumbPlaceholder() {
         height={THUMB_H - 44}
         rx="8"
         fill="none"
-        stroke="rgba(255,255,255,0.08)"
+        stroke="rgba(255,255,255,0.10)"
         strokeWidth="1"
         strokeDasharray="4 5"
       />
+      <text
+        x={THUMB_W / 2}
+        y={THUMB_H / 2 + 3}
+        textAnchor="middle"
+        fontSize={10}
+        fill="rgba(255,255,255,0.45)"
+        style={{ fontFamily: "system-ui, sans-serif" }}
+      >
+        Пусто
+      </text>
     </svg>
   );
 }
