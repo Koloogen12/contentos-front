@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { getCanvas } from "@/lib/canvases";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -222,7 +224,7 @@ function DrawerInner({
       if (Number.isFinite(n)) next[key] = n;
     }
     patchMutation.mutate({ metrics: next });
-    toast.success(t.plan.toasts.published === "Опубликовано" ? "Метрики сохранены" : "Saved");
+    toast.success(t.plan.drawer.metricsSaved);
   };
 
   const dateLabel = React.useMemo(() => {
@@ -281,24 +283,11 @@ function DrawerInner({
 
         <div className="co-plan-drawer-body">
           {post.canvas_id && (
-            <section>
-              <div className="co-plan-drawer-section-h">
-                {t.plan.drawer.fromCanvas}
-              </div>
-              <Link
-                href={`/canvas/${post.canvas_id}`}
-                className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--text-tertiary)] underline-offset-4 hover:underline"
-                onClick={onClose}
-              >
-                {t.plan.drawer.openCanvas}
-                <ExternalLink size={12} />
-              </Link>
-              {post.talking_point_text && (
-                <p className="mt-1.5 text-[12px] leading-snug text-[color:var(--text-secondary)] line-clamp-3">
-                  «{post.talking_point_text}»
-                </p>
-              )}
-            </section>
+            <CanvasLinkSection
+              canvasId={post.canvas_id}
+              talkingPoint={post.talking_point_text}
+              onClose={onClose}
+            />
           )}
 
           <section>
@@ -497,5 +486,51 @@ function DrawerInner({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function CanvasLinkSection({
+  canvasId,
+  talkingPoint,
+  onClose,
+}: {
+  canvasId: string;
+  talkingPoint: string | null;
+  onClose: () => void;
+}) {
+  const canvasQuery = useQuery({
+    queryKey: ["canvas-name", canvasId],
+    queryFn: () => getCanvas(canvasId),
+    enabled: !!canvasId,
+  });
+
+  const truncated = React.useMemo(() => {
+    if (!talkingPoint) return null;
+    if (talkingPoint.length <= 120) return talkingPoint;
+    return talkingPoint.slice(0, 120).trimEnd() + "…";
+  }, [talkingPoint]);
+
+  return (
+    <section>
+      <div className="co-plan-drawer-section-h">{t.plan.drawer.fromCanvas}</div>
+      {canvasQuery.isPending ? (
+        <Skeleton className="h-4 w-40" />
+      ) : (
+        <Link
+          href={`/canvas/${canvasId}`}
+          className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--text-tertiary)] underline-offset-4 hover:underline"
+          onClick={onClose}
+          title={canvasQuery.data?.name ?? canvasId}
+        >
+          {canvasQuery.data?.name ?? t.plan.drawer.openCanvas}
+          <ExternalLink size={12} />
+        </Link>
+      )}
+      {truncated && (
+        <p className="mt-1.5 text-[12px] leading-snug text-[color:var(--text-secondary)]">
+          «{truncated}»
+        </p>
+      )}
+    </section>
   );
 }

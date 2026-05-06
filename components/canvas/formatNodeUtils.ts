@@ -113,3 +113,26 @@ export function buildArticleFullText(parts: {
 export function buildHooksBankFullText(hooks: HookEntry[]): string {
   return hooks.map((h, i) => `${i + 1}. ${h.text} (${h.trigger})`).join("\n\n");
 }
+
+/**
+ * Mirrors `twitter_creator.py#_assemble_full_text` — joins tweets with a
+ * blank line so threads read as one block.
+ */
+export function buildTwitterFullText(tweets: string[]): string {
+  return tweets.filter((s) => (s ?? "").trim().length > 0).join("\n\n");
+}
+
+/**
+ * Mirrors `instagram_creator.py#_assemble_full_text`:
+ *   caption (+ optional "---\nКадр: ...visual_direction").
+ */
+export function buildInstagramFullText(
+  caption: string,
+  visualDirection: string | undefined,
+): string {
+  const cap = (caption ?? "").trim();
+  const vd = (visualDirection ?? "").trim();
+  if (!vd) return cap;
+  if (!cap) return `---\nКадр: ${vd}`;
+  return `${cap}\n\n---\nКадр: ${vd}`;
+}

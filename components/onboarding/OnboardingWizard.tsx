@@ -567,7 +567,9 @@ function Step3VoiceSamples({
       return bulkCreateVoiceSamples(samples);
     },
     onSuccess: (result) => {
-      toast.success(`Сохранено образцов: ${result.created}`);
+      toast.success(
+        `Created ${result.created} · Skipped ${result.skipped}`,
+      );
       onFinish();
     },
     onError: (err) =>

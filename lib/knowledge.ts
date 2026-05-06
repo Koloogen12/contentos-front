@@ -1,10 +1,15 @@
 import { apiFetch } from "@/lib/api";
-import type { KnowledgeItemOut, KnowledgeType } from "@/lib/types";
+import type {
+  ContentPillar,
+  KnowledgeItemOut,
+  KnowledgeType,
+} from "@/lib/types";
 
 export interface ListKnowledgeParams {
   type?: KnowledgeType;
   project_id?: string | null;
   is_dormant?: boolean;
+  pillar?: ContentPillar | null;
 }
 
 export async function listKnowledge(
@@ -15,6 +20,7 @@ export async function listKnowledge(
   if (params.project_id) search.set("project_id", params.project_id);
   if (params.is_dormant !== undefined)
     search.set("is_dormant", String(params.is_dormant));
+  if (params.pillar) search.set("pillar", params.pillar);
   const qs = search.toString();
   return apiFetch<KnowledgeItemOut[]>(
     `/api/v1/knowledge${qs ? `?${qs}` : ""}`,
@@ -29,6 +35,7 @@ export interface CreateKnowledgeInput {
   project_id?: string | null;
   viral_score?: number | null;
   source_file?: string | null;
+  pillar?: ContentPillar | null;
 }
 
 export async function createKnowledge(
@@ -48,6 +55,7 @@ export interface UpdateKnowledgeInput {
   project_id?: string | null;
   viral_score?: number | null;
   is_dormant?: boolean;
+  pillar?: ContentPillar | null;
 }
 
 export async function updateKnowledge(
@@ -86,4 +94,30 @@ export async function detachKnowledgeFromNode(
   await apiFetch<void>(`/api/v1/nodes/${nodeId}/knowledge/${itemId}`, {
     method: "DELETE",
   });
+}
+
+export interface BulkAffectedResponse {
+  affected: number;
+}
+
+export async function bulkDeleteKnowledge(
+  ids: string[],
+): Promise<BulkAffectedResponse> {
+  return apiFetch<BulkAffectedResponse>("/api/v1/knowledge/bulk-delete", {
+    method: "POST",
+    body: { ids },
+  });
+}
+
+export async function bulkUpdateKnowledgeProject(
+  ids: string[],
+  project_id: string | null,
+): Promise<BulkAffectedResponse> {
+  return apiFetch<BulkAffectedResponse>(
+    "/api/v1/knowledge/bulk-update-project",
+    {
+      method: "POST",
+      body: { ids, project_id },
+    },
+  );
 }

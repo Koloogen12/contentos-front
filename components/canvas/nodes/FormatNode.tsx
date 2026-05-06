@@ -19,6 +19,7 @@ import {
   FileText,
   Film,
   Hash,
+  Image as ImageIcon,
   LayoutGrid,
   Loader2,
   Mic,
@@ -29,6 +30,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Twitter,
   Wand2,
   Zap,
   type LucideIcon,
@@ -52,7 +54,9 @@ import {
   buildArticleFullText,
   buildCarouselFullText,
   buildHooksBankFullText,
+  buildInstagramFullText,
   buildReelsFullText,
+  buildTwitterFullText,
   findUpstreamExtract,
 } from "@/components/canvas/formatNodeUtils";
 import { cn } from "@/lib/utils";
@@ -78,6 +82,8 @@ const PLATFORM_LIST: ReadonlyArray<{
 }> = [
   { k: "telegram", label: "Telegram", Icon: Send },
   { k: "linkedin", label: "LinkedIn", Icon: FileText },
+  { k: "twitter", label: "X / Twitter", Icon: Twitter },
+  { k: "instagram", label: "Instagram", Icon: ImageIcon },
   { k: "carousel", label: "Carousel", Icon: LayoutGrid },
   { k: "reels", label: "Reels", Icon: Film },
   { k: "hooks", label: "Hooks", Icon: Hash },
@@ -87,6 +93,8 @@ const PLATFORM_LIST: ReadonlyArray<{
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
   telegram: "Telegram",
   linkedin: "LinkedIn",
+  twitter: "X / Twitter",
+  instagram: "Instagram",
   carousel: "Carousel",
   reels: "Reels",
   hooks: "Hooks",
@@ -118,6 +126,8 @@ export function FormatNode({ data, selected }: NodeProps) {
   const scheduledDate = useScheduledBadge(node.id);
 
   const articleSections = format.sections ?? [];
+  const tweets = format.tweets ?? [];
+  const formatType: "single" | "thread" = format.format_type ?? "thread";
 
   // ---- Upstream extract idea-picker (Requirement A) ----
   // Read upstream extract via the canvas context. `getCanvas` returns the
@@ -146,6 +156,9 @@ export function FormatNode({ data, selected }: NodeProps) {
     if (platform === "reels") return beats.length > 0 || hooks.length > 0;
     if (platform === "hooks") return hooksBank.length > 0;
     if (platform === "article") return articleSections.length > 0;
+    if (platform === "twitter") return tweets.length > 0;
+    if (platform === "instagram")
+      return Boolean(format.caption || format.body || format.hook);
     return hooks.length > 0;
   }, [
     platform,
@@ -154,6 +167,10 @@ export function FormatNode({ data, selected }: NodeProps) {
     hooks.length,
     hooksBank.length,
     articleSections.length,
+    tweets.length,
+    format.caption,
+    format.body,
+    format.hook,
   ]);
 
   const tweakMutation = useMutation({
@@ -473,6 +490,49 @@ export function FormatNode({ data, selected }: NodeProps) {
                       hooks_bank: next,
                       full_text: buildHooksBankFullText(next),
                     });
+                  }}
+                />
+              ) : platform === "twitter" ? (
+                <TwitterBody
+                  tweets={tweets}
+                  formatType={formatType}
+                  readOnly={!!readOnly}
+                  onUpdateTweet={(i, text) => {
+                    const next = tweets.map((tw, idx) =>
+                      idx === i ? text : tw,
+                    );
+                    void updateNodeData(node.id, {
+                      tweets: next,
+                      full_text: buildTwitterFullText(next),
+                    });
+                  }}
+                  onSetFormatType={(ft) => {
+                    void updateNodeData(node.id, { format_type: ft });
+                  }}
+                />
+              ) : platform === "instagram" ? (
+                <InstagramBody
+                  caption={format.caption ?? ""}
+                  hook={format.hook ?? ""}
+                  body={format.body ?? ""}
+                  cta={format.cta ?? ""}
+                  visualDirection={format.visual_direction ?? ""}
+                  readOnly={!!readOnly}
+                  onUpdateField={(field, v) => {
+                    const next: Partial<FormatNodeData> = { [field]: v };
+                    const merged = {
+                      caption:
+                        field === "caption" ? v : format.caption ?? "",
+                      visual_direction:
+                        field === "visual_direction"
+                          ? v
+                          : format.visual_direction ?? "",
+                    };
+                    next.full_text = buildInstagramFullText(
+                      merged.caption,
+                      merged.visual_direction,
+                    );
+                    void updateNodeData(node.id, next);
                   }}
                 />
               ) : platform === "article" ? (
@@ -1145,6 +1205,178 @@ function HooksBankBody({
         </li>
       ))}
     </ul>
+  );
+}
+
+function TwitterBody({
+  tweets,
+  formatType,
+  readOnly,
+  onUpdateTweet,
+  onSetFormatType,
+}: {
+  tweets: string[];
+  formatType: "single" | "thread";
+  readOnly: boolean;
+  onUpdateTweet: (i: number, text: string) => void;
+  onSetFormatType: (ft: "single" | "thread") => void;
+}) {
+  const total = tweets.length || 1;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+          {formatType === "thread" ? t.format.twitterThread : t.format.twitterSingle}
+        </span>
+        {!readOnly && (
+          <div className="ml-auto flex gap-1">
+            <button
+              type="button"
+              className={cn(
+                "co-tab-pill nodrag",
+                formatType === "single" && "active",
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetFormatType("single");
+              }}
+            >
+              соло
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "co-tab-pill nodrag",
+                formatType === "thread" && "active",
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetFormatType("thread");
+              }}
+            >
+              тред
+            </button>
+          </div>
+        )}
+      </div>
+      {tweets.length === 0 ? (
+        <div className="text-[11px] text-zinc-500">—</div>
+      ) : formatType === "single" ? (
+        <div className="rounded-md border border-white/5 bg-black/30 p-2">
+          <EditableText
+            value={tweets[0] ?? ""}
+            disabled={readOnly}
+            onSave={(v) => onUpdateTweet(0, v)}
+            multiline
+            rows={6}
+            className="text-[12px] leading-snug text-zinc-100 whitespace-pre-wrap block w-full"
+            ariaLabel="Твит"
+          />
+        </div>
+      ) : (
+        <ol className="flex flex-col gap-1.5">
+          {tweets.map((tw, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-white/5 bg-black/30 p-2"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                {i + 1}/{total}
+              </div>
+              <EditableText
+                value={tw}
+                disabled={readOnly}
+                onSave={(v) => onUpdateTweet(i, v)}
+                multiline
+                rows={3}
+                className="mt-1 text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+                ariaLabel={`Твит ${i + 1}`}
+              />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function InstagramBody({
+  caption,
+  hook,
+  body,
+  cta,
+  visualDirection,
+  readOnly,
+  onUpdateField,
+}: {
+  caption: string;
+  hook: string;
+  body: string;
+  cta: string;
+  visualDirection: string;
+  readOnly: boolean;
+  onUpdateField: (
+    field: "caption" | "hook" | "body" | "cta" | "visual_direction",
+    v: string,
+  ) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="rounded-md border border-white/5 bg-black/30 p-2 flex flex-col gap-1.5">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          Caption
+        </div>
+        {hook ? (
+          <EditableText
+            value={hook}
+            disabled={readOnly}
+            onSave={(v) => onUpdateField("hook", v)}
+            multiline
+            rows={2}
+            placeholder="Хук…"
+            className="text-[11px] font-medium text-zinc-100 whitespace-pre-wrap block w-full"
+            ariaLabel="Хук"
+          />
+        ) : null}
+        <EditableText
+          value={body || caption}
+          disabled={readOnly}
+          onSave={(v) => onUpdateField(body ? "body" : "caption", v)}
+          multiline
+          rows={5}
+          placeholder="Подпись…"
+          className="text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+          ariaLabel="Подпись"
+        />
+        {cta ? (
+          <EditableText
+            value={cta}
+            disabled={readOnly}
+            onSave={(v) => onUpdateField("cta", v)}
+            multiline
+            rows={2}
+            placeholder="CTA…"
+            className="text-[11px] italic text-indigo-200 whitespace-pre-wrap block w-full"
+            ariaLabel="CTA"
+          />
+        ) : null}
+      </div>
+      <div className="rounded-md border border-amber-400/20 bg-amber-400/[0.04] p-2">
+        <div className="text-[10px] uppercase tracking-wider text-amber-300/80 mb-1">
+          {t.format.visualDirection}
+        </div>
+        <EditableText
+          value={visualDirection}
+          disabled={readOnly}
+          onSave={(v) => onUpdateField("visual_direction", v)}
+          multiline
+          rows={3}
+          placeholder="Что в кадре, ракурс, свет…"
+          className="text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+          ariaLabel="Visual direction"
+        />
+      </div>
+    </div>
   );
 }
 

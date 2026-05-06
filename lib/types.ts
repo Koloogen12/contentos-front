@@ -113,6 +113,8 @@ export interface ExtractNodeData {
 export type FormatPlatform =
   | "telegram"
   | "linkedin"
+  | "twitter"
+  | "instagram"
   | "carousel"
   | "reels"
   | "hooks"
@@ -153,6 +155,11 @@ export interface ArticleSection {
 export interface FormatNodeData {
   platform?: FormatPlatform;
   talking_point_text?: string;
+  // Twitter-specific
+  tweets?: string[];
+  format_type?: "single" | "thread";
+  // Instagram-specific (caption / hook / body / cta already exist below)
+  visual_direction?: string;
   /**
    * Per-format-node selection of which upstream extract talking-point this
    * format generates from. Set client-side; backend ignores it (extra JSON
@@ -214,7 +221,8 @@ export type KnowledgeType =
   | "reference"
   | "audience"
   | "voice_rule"
-  | "content_theme";
+  | "content_theme"
+  | "manifesto";
 
 export interface KnowledgeItemOut {
   id: UUID;
@@ -225,6 +233,7 @@ export interface KnowledgeItemOut {
   tags: string[];
   viral_score: number | null;
   source_file: string | null;
+  pillar?: ContentPillar | null;
   is_dormant: boolean;
   last_used_at: string | null;
   created_at: string;
@@ -548,6 +557,7 @@ export interface TopPost {
 
 export interface StatsResponse {
   publishing_streak: number;
+  publishing_streak_record: number;
   total_published: number;
   this_week_published: number;
   this_month_published: number;

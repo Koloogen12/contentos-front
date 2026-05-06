@@ -15,6 +15,7 @@ import type { LucideIcon } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { getWhatToWrite } from "@/lib/content-plan";
 import { createCanvas } from "@/lib/canvases";
+import { createNode } from "@/lib/nodes";
 import type { WhatToWriteRecommendation } from "@/lib/types";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -74,7 +75,22 @@ function RecommendationRow({ rec }: { rec: WhatToWriteRecommendation }) {
         rec.knowledge_item_title ||
         rec.title ||
         t.common.untitled;
-      return createCanvas({ name });
+      const canvas = await createCanvas({ name });
+      const seed =
+        rec.knowledge_item_body || rec.knowledge_item_title || rec.title;
+      if (seed) {
+        try {
+          await createNode(canvas.id, {
+            type: "source",
+            position_x: 100,
+            position_y: 120,
+            data: { input_type: "text", content: seed },
+          });
+        } catch {
+          // best-effort
+        }
+      }
+      return canvas;
     },
     onSuccess: (canvas) => {
       qc.invalidateQueries({ queryKey: ["canvases"] });

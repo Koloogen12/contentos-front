@@ -15,6 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   ArrowLeft,
+  Chrome,
   CreditCard,
   Keyboard,
   Loader2,
@@ -300,6 +301,27 @@ function AppearanceSection() {
 function ShortcutsSection() {
   return (
     <div className="co-settings-block">
+      <div
+        className="rounded-xl border border-[color:var(--border-subtle)] bg-background/40 p-4"
+        style={{ marginBottom: 24 }}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white/5 text-muted-foreground">
+            <Chrome size={16} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <div className="text-[14px] font-medium">{t.extension.title}</div>
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                {t.extension.soon}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[12.5px] text-[color:var(--text-muted)]">
+              {t.extension.desc}
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="co-settings-h">{t.settings.sections.shortcuts}</div>
       <div className="co-settings-sub">{t.settings.shortcuts.sub}</div>
       {t.settings.shortcuts.groups.map((g) => (

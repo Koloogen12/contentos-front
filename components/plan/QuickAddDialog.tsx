@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { createPost, formatDayShortRu, parseISODate } from "@/lib/content-plan";
 import { createCanvas } from "@/lib/canvases";
+import { createNode } from "@/lib/nodes";
 import type {
   ContentPillar,
   PlannedPostCreate,
@@ -80,10 +81,25 @@ export function QuickAddDialog({
 
   const openInAiMutation = useMutation({
     mutationFn: async () => {
+      const trimmed = hook.trim();
       const canvas = await createCanvas({
-        name: hook.trim().slice(0, 80) || t.common.untitled,
+        name: trimmed.slice(0, 80) || t.common.untitled,
         description: null,
       });
+      // Seed a source-text node with the recommended idea, so the user
+      // lands in a canvas pre-loaded with the prompt they came from.
+      if (trimmed) {
+        try {
+          await createNode(canvas.id, {
+            type: "source",
+            position_x: 100,
+            position_y: 120,
+            data: { input_type: "text", content: trimmed },
+          });
+        } catch {
+          // Best-effort — the canvas itself is created either way.
+        }
+      }
       return canvas;
     },
     onSuccess: (canvas) => {

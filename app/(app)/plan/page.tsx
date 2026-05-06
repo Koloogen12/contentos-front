@@ -19,6 +19,9 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WeeklyCalendar } from "@/components/plan/WeeklyCalendar";
+import { MonthlyCalendar } from "@/components/plan/MonthlyCalendar";
+import { PostList } from "@/components/plan/PostList";
+import { AnalyticsScreen } from "@/components/plan/AnalyticsScreen";
 import { QueueSidebar } from "@/components/plan/QueueSidebar";
 import { InsightsPanel } from "@/components/plan/InsightsPanel";
 import { PostDetailDrawer } from "@/components/plan/PostDetailDrawer";
@@ -45,6 +48,13 @@ export default function PlanPage() {
 
   const [weekStart, setWeekStartState] = React.useState(initialWeek);
   const [view, setView] = React.useState<PlanView>("week");
+  const initialMonth = React.useMemo(() => {
+    const param = searchParams.get("month");
+    if (param) return param;
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, [searchParams]);
+  const [month, setMonthState] = React.useState(initialMonth);
   const [drawerPost, setDrawerPost] = React.useState<PlannedPostOut | null>(
     null,
   );
@@ -59,6 +69,16 @@ export default function PlanPage() {
       setWeekStartState(iso);
       const sp = new URLSearchParams(searchParams.toString());
       sp.set("week", iso);
+      router.replace(`/plan?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
+  const setMonth = React.useCallback(
+    (next: string) => {
+      setMonthState(next);
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("month", next);
       router.replace(`/plan?${sp.toString()}`);
     },
     [router, searchParams],
@@ -136,8 +156,20 @@ export default function PlanPage() {
                 openQuickAdd(date, platform)
               }
             />
+          ) : view === "month" ? (
+            <MonthlyCalendar
+              month={month}
+              setMonth={setMonth}
+              onDayClick={(_date, posts) => {
+                if (posts.length > 0) {
+                  setDrawerPost(posts[0]);
+                }
+              }}
+            />
+          ) : view === "list" ? (
+            <PostList onPostClick={(post) => setDrawerPost(post)} />
           ) : (
-            <PlanStub label={VIEWS.find((v) => v.key === view)?.label ?? ""} />
+            <AnalyticsScreen />
           )}
         </div>
 
@@ -166,13 +198,3 @@ export default function PlanPage() {
   );
 }
 
-function PlanStub({ label }: { label: string }) {
-  return (
-    <div className="co-plan-card flex min-h-[400px] flex-col items-center justify-center gap-2 text-center">
-      <div className="text-[14px] font-semibold">{label}</div>
-      <div className="text-[12px] text-[color:var(--text-muted)]">
-        {t.plan.stub}
-      </div>
-    </div>
-  );
-}

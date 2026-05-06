@@ -175,6 +175,8 @@ export const t = {
     runButtonByPlatform: {
       telegram: "Написать пост",
       linkedin: "Написать пост",
+      twitter: "Написать твит",
+      instagram: "Написать пост",
       carousel: "Собрать карусель",
       reels: "Написать сценарий",
       hooks: "Сгенерить хуки",
@@ -183,6 +185,8 @@ export const t = {
     runningStatusByPlatform: {
       telegram: "Пишу пост...",
       linkedin: "Пишу пост...",
+      twitter: "Пишу твит...",
+      instagram: "Пишу пост...",
       carousel: "Собираю карусель...",
       reels: "Пишу сценарий...",
       hooks: "Генерю хуки...",
@@ -204,6 +208,9 @@ export const t = {
     },
     copySuccess: "Скопировано в буфер",
     copyError: "Не удалось скопировать",
+    visualDirection: "КАДР / VISUAL DIRECTION",
+    twitterThread: "ТРЕД",
+    twitterSingle: "СОЛО",
   },
 
   // ----- Versions dialog -----
@@ -472,7 +479,21 @@ export const t = {
       audience: "аудитория",
       voice_rule: "голос",
       content_theme: "тема",
+      manifesto: "манифест",
     },
+    pillarLabel: "Столб",
+    pillarNone: "Не указан",
+    pillarFilterAll: "Все",
+    bulkSelected: (n: number) => `${n} выбрано`,
+    bulkDelete: "Удалить",
+    bulkMove: "Перенести в проект",
+    bulkClear: "Снять выделение",
+    bulkDeleteConfirmTitle: "Удалить выбранные?",
+    bulkDeleteConfirmDesc: (n: number) =>
+      `${n} ${plural(n, "элемент", "элемента", "элементов")} будут удалены. Действие необратимо.`,
+    bulkDeleted: (n: number) => `Удалено ${n}`,
+    bulkMoved: (n: number) => `Перенесено ${n}`,
+    bulkFailed: "Не удалось выполнить",
     couldNotLoadTitle: "Не удалось загрузить базу знаний",
     couldNotLoadDetail: "Не удалось загрузить базу знаний.",
     retry: "Повторить",
@@ -717,6 +738,7 @@ export const t = {
       metricsComments: "Комментарии",
       metricsClicks: "Клики",
       saveMetrics: "Сохранить метрики",
+      metricsSaved: "Метрики сохранены",
       markPublished: "Отметить опубликованным",
       skip: "Пропустить",
       delete: "Удалить",
@@ -757,6 +779,90 @@ export const t = {
         top_score: "Топ из базы",
       },
     },
+  },
+
+  // ----- Global search -----
+  search: {
+    placeholder: "Поиск...",
+    triggerHint: "Cmd K",
+    dialogTitle: "Поиск",
+    dialogPlaceholder: "Поиск по знаниям, канвасам и постам...",
+    empty: "Ничего не найдено",
+    typeHint: "Начни вводить запрос",
+    groups: {
+      knowledge: "База знаний",
+      canvas: "Канвасы",
+      planned_post: "Запланированные посты",
+    } as Record<string, string>,
+    showMore: (n: number) => `Показать ещё ${n}`,
+    failed: "Не удалось найти",
+  },
+
+  // ----- Plan view: drag adapt warning -----
+  dragAdapt: {
+    title: (src: string, target: string) =>
+      `Текст написан для ${src}. Адаптировать под ${target}?`,
+    sub: "Если оставить — пост сохранит платформу и переедет в её строку.",
+    adapt: "Адаптировать",
+    keep: "Оставить как есть",
+    cancel: "Отмена",
+    note: "AI пока не переписывает автоматически — текст останется как есть.",
+  },
+
+  // ----- Plan: monthly -----
+  monthly: {
+    today: "Сегодня",
+  },
+
+  // ----- Plan: list -----
+  list: {
+    cols: {
+      num: "#",
+      date: "Дата",
+      hook: "Хук",
+      platform: "Платформа",
+      pillar: "Столб",
+      status: "Статус",
+      actions: "Действия",
+    },
+    filters: {
+      platform: "Платформа",
+      status: "Статус",
+      pillar: "Столб",
+      from: "От",
+      to: "До",
+      search: "Поиск",
+      reset: "Сбросить",
+    },
+    empty: "Постов не найдено",
+  },
+
+  // ----- Plan: analytics -----
+  analytics: {
+    monthLabel: "Месяц",
+    platformLabel: "Платформы",
+    cards: {
+      frequency: "ЧАСТОТА",
+      mix: "КОНТЕНТ-МИКС",
+      platforms: "ПЛАТФОРМЫ",
+      topPosts: "ЛУЧШИЕ ПОСТЫ",
+      streak: "PUBLISHING STREAK",
+    },
+    totalPublished: "Всего опубликовано",
+    thisMonth: "В этом месяце",
+    streakCurrent: (n: number) =>
+      `${n} ${plural(n, "день", "дня", "дней")} подряд`,
+    streakRecord: (n: number) =>
+      `Рекорд: ${n} ${plural(n, "день", "дня", "дней")}`,
+    last14days: "Последние 14 дней",
+    underrepresented: (pillar: string) => `↑ Мало ${pillar}`,
+  },
+
+  // ----- Settings: browser extension stub -----
+  extension: {
+    title: "Browser extension",
+    desc: "Вырезать в ContentOS со страницы — скоро будет.",
+    soon: "Скоро",
   },
 
   // ----- Dashboard extras -----

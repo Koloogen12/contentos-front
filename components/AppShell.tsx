@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Search,
   Settings,
   LayoutGrid,
   Trash2,
@@ -44,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ProjectDialog } from "@/components/projects/ProjectDialog";
+import { SearchDialog } from "@/components/SearchDialog";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -78,6 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const [collapsed, setCollapsed] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(SIDEBAR_KEY);
@@ -88,8 +91,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
 
+  // Cmd/Ctrl+K opens the global search dialog from anywhere, including
+  // immersive (canvas) pages.
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   if (isImmersive(pathname)) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      </>
+    );
   }
 
   return (
@@ -145,9 +166,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <TopBar />
+        <TopBar onOpenSearch={() => setSearchOpen(true)} />
         <main className="flex-1">{children}</main>
       </div>
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }
@@ -406,7 +428,7 @@ function DeleteProjectDialog({
   );
 }
 
-function TopBar() {
+function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const user = useAuthStore((s) => s.user);
   const organization = useAuthStore((s) => s.organization);
   const logout = useAuthStore((s) => s.logout);
@@ -426,6 +448,26 @@ function TopBar() {
       <div className="text-xs text-muted-foreground">
         {organization ? organization.name : ""}
       </div>
+      <button
+        type="button"
+        onClick={onOpenSearch}
+        className="ml-3 hidden flex-1 max-w-md items-center gap-2 rounded-lg border border-border bg-background/40 px-3 py-1.5 text-left text-[12.5px] text-muted-foreground transition-colors hover:bg-white/5 md:flex"
+        aria-label={t.search.dialogTitle}
+      >
+        <Search size={13} />
+        <span className="truncate">{t.search.placeholder}</span>
+        <span className="ml-auto rounded border border-border px-1 py-0.5 text-[10px] font-medium tabular-nums">
+          {t.search.triggerHint}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onOpenSearch}
+        className="ml-3 flex items-center gap-2 rounded-md p-2 text-muted-foreground hover:bg-white/5 md:hidden"
+        aria-label={t.search.dialogTitle}
+      >
+        <Search size={14} />
+      </button>
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-white/5">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
