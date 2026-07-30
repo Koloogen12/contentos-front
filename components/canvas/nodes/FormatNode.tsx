@@ -147,7 +147,7 @@ export function FormatNode({ data, selected }: NodeProps) {
   const scheduledDate = useScheduledBadge(node.id);
 
   const articleSections = format.sections ?? [];
-  // У рецензии те же sections, но с points вместо body — см. review_creator.
+  // У рецензии те же sections со связным body — см. review_creator.
   const reviewSections = platform === "review" ? (format.sections ?? []) : [];
   const tweets = format.tweets ?? [];
   const formatType: "single" | "thread" = format.format_type ?? "thread";
@@ -1798,19 +1798,27 @@ function ReviewBody({ format }: { format: FormatNodeData }) {
       )}
 
       {sections.map((sec, i) => {
-        const points = (sec as { points?: string[] }).points ?? [];
+        // Раздел рецензии — связный текст. Списком он был раньше, и именно
+        // поэтому читался как конспект, а не как мнение автора. Старые
+        // ноды с `points` дорисовываем как было, чтобы не осыпались.
+        const body = (sec as { body?: string }).body ?? "";
+        const legacyPoints = (sec as { points?: string[] }).points ?? [];
         return (
           <div key={i}>
             {sec.heading && (
               <div className="mb-1 font-medium text-foreground">{sec.heading}</div>
             )}
-            <ul className="flex flex-col gap-1">
-              {points.map((pt, j) => (
-                <li key={j} className="text-muted-foreground">
-                  — {pt}
-                </li>
-              ))}
-            </ul>
+            {body ? (
+              <p className="whitespace-pre-wrap text-muted-foreground">{body}</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {legacyPoints.map((pt, j) => (
+                  <li key={j} className="text-muted-foreground">
+                    — {pt}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         );
       })}
