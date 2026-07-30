@@ -62,6 +62,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { TrialRedirect } from "@/components/TrialRedirect";
+import { RedpolitikaSection } from "@/components/voice/RedpolitikaSection";
 
 export default function VoicePage() {
   const qc = useQueryClient();
@@ -169,6 +170,8 @@ export default function VoicePage() {
           )}
         </section>
       )}
+
+      <RedpolitikaSection sampleCount={samples.length} />
 
       <section>
         <div className="mb-3 flex items-center justify-between">

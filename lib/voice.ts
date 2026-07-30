@@ -9,6 +9,7 @@ import type {
   VoiceTraitsExtracted,
   YoutubeImportRequest,
 } from "@/lib/types";
+import type { Redpolitika, RedpolitikaDraft } from "@/lib/types";
 
 /**
  * Voice training service module.
@@ -81,6 +82,34 @@ export async function importVoiceFromUrls(
 ): Promise<VoiceImportResult> {
   return apiFetch<VoiceImportResult>("/api/v1/voice-samples/import/url", {
     method: "POST",
+    body: input,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Редполитика
+// ---------------------------------------------------------------------------
+//
+// Черновик собирается из образцов и всегда приходит с полем `gaps` — тем,
+// чего в текстах не видно. Заполняет его только человек: придуманный
+// читатель хуже отсутствующего, потому что редполитике начинают доверять.
+
+export async function getRedpolitika(): Promise<Redpolitika> {
+  return apiFetch<Redpolitika>("/api/v1/voice-samples/redpolitika");
+}
+
+export async function draftRedpolitika(): Promise<RedpolitikaDraft> {
+  return apiFetch<RedpolitikaDraft>(
+    "/api/v1/voice-samples/redpolitika/draft",
+    { method: "POST" },
+  );
+}
+
+export async function saveRedpolitika(
+  input: Redpolitika,
+): Promise<Redpolitika> {
+  return apiFetch<Redpolitika>("/api/v1/voice-samples/redpolitika", {
+    method: "PUT",
     body: input,
   });
 }

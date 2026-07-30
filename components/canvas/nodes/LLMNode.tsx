@@ -27,13 +27,23 @@ import {
   Loader2,
   Settings2,
   Sparkles,
+  Swords,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
-import { llmChat, setLlmSystemPrompt } from "@/lib/llm-node";
+import {
+  llmChat,
+  setLlmMode,
+  setLlmSystemPrompt,
+  type LlmNodeMode,
+} from "@/lib/llm-node";
 import type { LlmChatMessage, NodeOut, LlmNodeData } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { cn } from "@/lib/utils";
+import {
+  PORT_STYLE_LEFT,
+  PORT_STYLE_RIGHT,
+} from "./NodeShell";
 
 interface LLMNodeRfData {
   node: NodeOut;
@@ -62,6 +72,33 @@ export function LLMNode({ data, selected }: NodeProps) {
     nodeData.system_prompt ?? "",
   );
   const savedInstrRef = React.useRef(nodeData.system_prompt ?? "");
+
+  // ----- Режим ноды -----
+  // Оппонент — не пресет роли, а другой системный промпт на сервере: у него
+  // фиксированный порядок атак и порог уступки, которые в свободном поле
+  // «роль» не удержать. Роль при этом остаётся: она сужает предмет спора.
+  //
+  // Держим локально и синхронизируем с сервером через тот же llm-config, что
+  // и роль: общий PATCH ноды заменяет весь data и снёс бы историю чата.
+  const [mode, setMode] = React.useState<LlmNodeMode>(
+    nodeData.mode === "red_team" ? "red_team" : "assistant",
+  );
+  React.useEffect(() => {
+    setMode(nodeData.mode === "red_team" ? "red_team" : "assistant");
+  }, [nodeData.mode]);
+  const isRedTeam = mode === "red_team";
+
+  const toggleMode = React.useCallback(() => {
+    if (readOnly) return;
+    const next: LlmNodeMode = isRedTeam ? "assistant" : "red_team";
+    setMode(next);
+    setLlmMode(node.id, next, instruction.trim()).catch((err) => {
+      setMode(isRedTeam ? "red_team" : "assistant");
+      toast.error(
+        err instanceof ApiError ? err.detail : "Не удалось сменить режим",
+      );
+    });
+  }, [isRedTeam, instruction, node.id, readOnly]);
   // Re-seed from server on refetch when we haven't got a pending local edit.
   React.useEffect(() => {
     const incoming = nodeData.system_prompt ?? "";
@@ -138,7 +175,7 @@ export function LLMNode({ data, selected }: NodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="co-port-handle"
+        className="port"
         style={PORT_STYLE_LEFT}
       >
         <Link2 size={12} />
@@ -150,22 +187,22 @@ export function LLMNode({ data, selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="co-port-handle"
+        className="port"
         style={PORT_STYLE_RIGHT}
         title="Выход: последний ответ ассистента"
       >
         <ArrowRight size={12} />
       </Handle>
 
-      <div className="co-node-label">
+      <div className="nlabel">
         <Bot size={12} />
         <span>LLM · Opus 4.8</span>
       </div>
 
       <div
         className={cn(
-          "co-node-shell",
-          selected && "selected",
+          "nbox",
+          selected && "sel",
           chat.isPending && "running",
         )}
         style={{ padding: 0, overflow: "hidden" }}
@@ -173,8 +210,12 @@ export function LLMNode({ data, selected }: NodeProps) {
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-border/80 px-3 py-2">
           <div className="flex items-center gap-1.5 text-[12px] font-medium text-foreground">
-            <Sparkles size={12} className="text-content" />
-            Ассистент
+            {isRedTeam ? (
+              <Swords size={12} className="text-[color:var(--p-red)]" />
+            ) : (
+              <Sparkles size={12} className="text-content" />
+            )}
+            {isRedTeam ? "Оппонент" : "Ассистент"}
           </div>
           <div className="flex items-center gap-1.5">
             <span
@@ -191,6 +232,30 @@ export function LLMNode({ data, selected }: NodeProps) {
                 ? `${contextCount} в контексте`
                 : "нет контекста"}
             </span>
+            {!readOnly && (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-6 w-6 items-center justify-center rounded-md transition",
+                  isRedTeam
+                    ? "bg-[color:var(--p-red)]/15 text-[color:var(--p-red)]"
+                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMode();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={
+                  isRedTeam
+                    ? "Режим оппонента включён. Вернуть помощника"
+                    : "Поспорить с тезисом: сначала усилит формулировку, потом будет её ломать"
+                }
+                aria-pressed={isRedTeam}
+              >
+                <Swords size={12} />
+              </button>
+            )}
             {!readOnly && (
               <button
                 type="button"
@@ -243,8 +308,9 @@ export function LLMNode({ data, selected }: NodeProps) {
         >
           {messages.length === 0 && !chat.isPending && (
             <div className="py-6 text-center text-[12px] leading-snug text-muted-foreground">
-              Подключи ноды-источники слева и спроси что угодно про их
-              содержимое — обсудим и доработаем вместе.
+              {isRedTeam
+                ? "Напиши тезис, который собираешься публиковать. Сначала я сформулирую его сильнее, чем ты, — и только потом начну ломать."
+                : "Подключи ноды-источники слева и спроси что угодно про их содержимое — обсудим и доработаем вместе."}
             </div>
           )}
           {messages.map((m, i) => (
@@ -265,7 +331,7 @@ export function LLMNode({ data, selected }: NodeProps) {
               <textarea
                 className="co-field-textarea nodrag flex-1"
                 style={{ minHeight: 38, maxHeight: 120, resize: "none" }}
-                placeholder="Спроси или попроси доработать…"
+                placeholder={isRedTeam ? "Тезис, который надо проверить на прочность…" : "Спроси или попроси доработать…"}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onMouseDown={(e) => e.stopPropagation()}
@@ -319,32 +385,4 @@ function ChatBubble({ message }: { message: LlmChatMessage }) {
   );
 }
 
-const PORT_STYLE_LEFT: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  background: "var(--port-bg, #2a2d30)",
-  border: "1px solid rgba(0, 0, 0, 0.06)",
-  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
-  left: -13,
-  color: "rgb(var(--ink-rgb) / 0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 3,
-};
 
-const PORT_STYLE_RIGHT: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  background: "var(--port-bg, #2a2d30)",
-  border: "1px solid rgba(0, 0, 0, 0.06)",
-  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
-  right: -13,
-  color: "rgb(var(--ink-rgb) / 0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 3,
-};

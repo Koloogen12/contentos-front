@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Bottom-left zoom controls + zoom-percentage label, 1:1 from
- * `THE CONTENT-2/chrome.jsx#ZoomControls`.
+ * Зум-контрол в левом нижнем углу канваса.
  *
- * Note: The bottom-right is now occupied by `<MiniMap />` rendered inside
- * `<ReactFlow>` (see CanvasEditor.tsx). The earlier `CanvasSwatches`
- * decorative export has been removed.
+ * Разметка по прототипу THE DRAFT (prime2-canvas.jsx): `.zoomctl` — колонка
+ * из трёх `.ib .tt` и подписи `.pct` с текущим масштабом под ними.
+ * Миникарта живёт в правом нижнем углу и рендерится внутри <ReactFlow>
+ * (см. CanvasEditor.tsx).
  */
 
 import * as React from "react";
@@ -14,37 +14,42 @@ import { useReactFlow, useStore } from "@xyflow/react";
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { t } from "@/lib/i18n";
 
+const ICON = 15;
+
 export function CanvasZoomControls() {
   const rf = useReactFlow();
   const zoom = useStore((s) => s.transform[2]);
 
   return (
-    <div className="co-zoom-controls">
+    <div className="zoomctl">
       <button
         type="button"
-        className="co-zoom-btn"
+        className="ib tt"
+        data-tt={`${t.toolbar.fitToScreen} · ⇧1`}
+        aria-label={t.toolbar.fitToScreen}
         onClick={() => rf.fitView({ padding: 0.2, maxZoom: 1.2 })}
-        title={t.toolbar.fitToScreen}
       >
-        <Maximize2 size={14} />
+        <Maximize2 size={ICON} />
       </button>
       <button
         type="button"
-        className="co-zoom-btn"
+        className="ib tt"
+        data-tt={t.toolbar.zoomIn}
+        aria-label={t.toolbar.zoomIn}
         onClick={() => rf.zoomIn()}
-        title={t.toolbar.zoomIn}
       >
-        <ZoomIn size={14} />
+        <ZoomIn size={ICON} />
       </button>
       <button
         type="button"
-        className="co-zoom-btn"
+        className="ib tt"
+        data-tt={t.toolbar.zoomOut}
+        aria-label={t.toolbar.zoomOut}
         onClick={() => rf.zoomOut()}
-        title={t.toolbar.zoomOut}
       >
-        <ZoomOut size={14} />
+        <ZoomOut size={ICON} />
       </button>
-      <div className="co-zoom-level">{Math.round(zoom * 100)}%</div>
+      <span className="pct">{Math.round(zoom * 100)}%</span>
     </div>
   );
 }

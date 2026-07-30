@@ -81,6 +81,9 @@ import {
 import { CalendarPlus } from "lucide-react";
 import { formatDayShortRu, parseISODate } from "@/lib/content-plan";
 import type { PostPlatform } from "@/lib/types";
+import {
+  PORT_STYLE_LEFT,
+} from "./NodeShell";
 
 interface FormatNodeRfData {
   node: NodeOut;
@@ -336,20 +339,20 @@ export function FormatNode({ data, selected }: NodeProps) {
       >
         <ArrowRight size={12} />
       </Handle>
-      <div className="co-node-label">
+      <div className="nlabel">
         <PenLine size={12} />
         <span>{t.format.label}</span>
       </div>
       <div
         className={cn(
-          "co-node-shell",
-          selected && "selected",
+          "nbox",
+          selected && "sel",
           status === "running" && "running",
           status === "done" && "done",
           status === "error" && "error",
         )}
       >
-        <span className={`co-node-status-dot ${status ?? "idle"}`} />
+        <span className={`nstatus ${status ?? "idle"}`} />
 
         {/* Tezis pill (top-right next to status dot). Helpful when several
              format nodes are attached to the same extract — at-a-glance
@@ -396,7 +399,7 @@ export function FormatNode({ data, selected }: NodeProps) {
           </span>
         )}
 
-        <div className="co-node-content">
+        <div className="nbody">
           {/* Idea picker (Requirement A): only shown when an upstream
               extract has talking_points. Per-format-node selection is
               stored in `data.source_talking_point_index`; falls back to
@@ -1720,20 +1723,6 @@ function InstagramBody({
   );
 }
 
-const PORT_STYLE_LEFT: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  background: "var(--port-bg)",
-  border: "1px solid rgba(0, 0, 0, 0.06)",
-  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
-  left: -13,
-  color: "rgb(var(--ink-rgb) / 0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 3,
-};
 
 // Suppress unused import warnings (Sparkles imported above but used only in
 // optional flows): React doesn't warn but keep static reference.

@@ -25,6 +25,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { FileAudio, Loader2, Zap } from "lucide-react";
 
@@ -138,6 +139,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const canvasId = canvas.id;
   const reactFlow = useReactFlow();
   const transform = useStore((s) => s.transform);
+
+  // React Flow красит полотно и рёбра сам, поэтому его colorMode должен идти
+  // за темой приложения, а не быть прибит к dark. До гидрации resolvedTheme
+  // пуст — берём светлую, она по умолчанию.
+  const { resolvedTheme } = useTheme();
+  const flowColorMode = resolvedTheme === "dark" ? "dark" : "light";
 
   const [runningRuns, setRunningRuns] = React.useState<
     Record<string, string /* skillRunId */>
@@ -1819,7 +1826,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           fitView
           fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
           proOptions={{ hideAttribution: true }}
-          colorMode="dark"
+          colorMode={flowColorMode}
           panOnDrag={
             // While placing client objects we MUST disable left-click pan so
             // onPaneClick fires. For "pan" and "select" tools, default
@@ -1841,18 +1848,22 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               @xyflow/react v12 (see MiniMap/types.d.ts → MiniMapNodeProps).
               We resolve type → label via miniNodeMetaRef updated from
               rfNodes/clientObjects above. */}
+          {/* Размеры, скругление и тень задаёт `.minimap` из workspace.css —
+              портированные из прототипа. Здесь только то, что React Flow
+              не умеет брать из CSS: цвет маски вне вьюпорта. Он должен идти
+              за темой, иначе на светлой теме карта тонет в чёрном. */}
           <MiniMap
             pannable
             zoomable
             position="bottom-right"
-            maskColor="rgba(0,0,0,0.6)"
+            className="minimap"
+            maskColor={
+              flowColorMode === "dark"
+                ? "rgba(0,0,0,.45)"
+                : "rgba(23,23,23,.06)"
+            }
             nodeBorderRadius={6}
             nodeComponent={MiniMapNode}
-            style={{
-              background: "rgb(var(--card-rgb) / 0.92)",
-              border: "1px solid rgb(var(--ink-rgb) / 0.08)",
-              borderRadius: 8,
-            }}
           />
         </ReactFlow>
 

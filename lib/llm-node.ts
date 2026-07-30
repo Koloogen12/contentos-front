@@ -32,3 +32,23 @@ export async function setLlmSystemPrompt(
     body: { system_prompt: systemPrompt },
   });
 }
+
+/** Режимы LLM-ноды: помощник по материалу или оппонент. */
+export type LlmNodeMode = "assistant" | "red_team";
+
+/**
+ * Переключить режим ноды.
+ *
+ * Роль отправляем вместе с режимом, потому что эндпоинт пишет `system_prompt`
+ * всегда: без неё сохранение режима стёрло бы заданную автором роль.
+ */
+export async function setLlmMode(
+  nodeId: string,
+  mode: LlmNodeMode,
+  systemPrompt: string,
+): Promise<void> {
+  await apiFetch<void>(`/api/v1/nodes/${nodeId}/llm-config`, {
+    method: "PATCH",
+    body: { system_prompt: systemPrompt, mode },
+  });
+}

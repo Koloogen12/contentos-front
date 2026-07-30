@@ -32,6 +32,10 @@ import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { ContentViewerModal } from "@/components/canvas/ContentViewerModal";
 import { cn } from "@/lib/utils";
 import { t, formatDurationRu } from "@/lib/i18n";
+import {
+  INVISIBLE_HANDLE,
+  PORT_STYLE_RIGHT,
+} from "./NodeShell";
 
 interface SourceNodeRfData {
   node: NodeOut;
@@ -60,32 +64,32 @@ export function SourceNode({ data, selected }: NodeProps) {
         position={Position.Left}
         style={INVISIBLE_HANDLE}
       />
-      <div className="co-node-label">
+      <div className="nlabel">
         <Inbox size={12} />
         <span>{t.source.label}</span>
       </div>
       <div
         className={cn(
-          "co-node-shell",
-          selected && "selected",
+          "nbox",
+          selected && "sel",
           status === "running" && "running",
           status === "done" && "done",
           status === "error" && "error",
         )}
       >
-        <span className={`co-node-status-dot ${status ?? "idle"}`} />
+        <span className={`nstatus ${status ?? "idle"}`} />
 
         {/* Right output port — 26px circle */}
         <Handle
           type="source"
           position={Position.Right}
-          className="co-port-handle"
+          className="port"
           style={PORT_STYLE_RIGHT}
         >
           <ArrowRight size={12} />
         </Handle>
 
-        <div className="co-node-content">
+        <div className="nbody">
           <div className="flex flex-wrap gap-1">
             {(
               [
@@ -673,25 +677,4 @@ function FilePanel({
 // React Flow handles need to remain in the DOM so the connection logic works,
 // but we want the prototype's port circle to be the visible affordance. The
 // visible right-side port is rendered via `Handle` + a pseudo-element style.
-const PORT_STYLE_RIGHT: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  background: "var(--port-bg)",
-  border: "1px solid rgba(0, 0, 0, 0.06)",
-  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
-  right: -13,
-  color: "rgb(var(--ink-rgb) / 0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 3,
-};
 
-const INVISIBLE_HANDLE: React.CSSProperties = {
-  width: 1,
-  height: 1,
-  background: "transparent",
-  border: "none",
-  opacity: 0,
-};

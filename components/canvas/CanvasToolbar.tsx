@@ -1,9 +1,13 @@
 "use client";
 
 /**
- * CanvasToolbar — 1:1 port of `THE CONTENT-2/chrome.jsx#CanvasToolbar`.
- * Pill toolbar at bottom-center with select / pan / sticky / comment /
- * text / arrow / + (add node).
+ * CanvasToolbar — панель инструментов внизу канваса.
+ *
+ * Разметка по прототипу THE DRAFT (prime2-canvas.jsx): контейнер `.toolbar`,
+ * каждая кнопка — `.ib .tt` с подсказкой в `data-tt` и активным состоянием
+ * через `data-on`. Разделителей между группами в прототипе нет — кнопки идут
+ * подряд, поэтому их здесь тоже нет. Иконки 16px: `.ib` — квадрат 32px,
+ * при 18px иконка садится на границы.
  */
 
 import * as React from "react";
@@ -16,7 +20,6 @@ import {
   StickyNote,
   Type,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
 export type CanvasTool =
@@ -27,6 +30,8 @@ export type CanvasTool =
   | "text"
   | "arrow";
 
+const ICON = 16;
+
 interface CanvasToolbarProps {
   tool: CanvasTool;
   setTool: (tool: CanvasTool) => void;
@@ -35,39 +40,33 @@ interface CanvasToolbarProps {
 
 export function CanvasToolbar({ tool, setTool, onAddNode }: CanvasToolbarProps) {
   return (
-    <div className="co-canvas-toolbar">
-      <ToolBtn k="select" tool={tool} setTool={setTool} title={`${t.toolbar.select} (V)`}>
-        <MousePointer2 size={18} />
+    <div className="toolbar">
+      <ToolBtn k="select" tool={tool} setTool={setTool} tip={`${t.toolbar.select} · V`}>
+        <MousePointer2 size={ICON} />
       </ToolBtn>
-      <ToolBtn k="pan" tool={tool} setTool={setTool} title={`${t.toolbar.pan} (Space)`}>
-        <Hand size={18} />
+      <ToolBtn k="pan" tool={tool} setTool={setTool} tip={`${t.toolbar.pan} · H`}>
+        <Hand size={ICON} />
       </ToolBtn>
-      <div className="co-toolbar-sep" />
-      <ToolBtn k="note" tool={tool} setTool={setTool} title={t.toolbar.note}>
-        <StickyNote size={18} />
+      <ToolBtn k="note" tool={tool} setTool={setTool} tip={`${t.toolbar.note} · N`}>
+        <StickyNote size={ICON} />
       </ToolBtn>
-      <ToolBtn
-        k="comment"
-        tool={tool}
-        setTool={setTool}
-        title={t.toolbar.comment}
-      >
-        <MessageCircle size={18} />
+      <ToolBtn k="comment" tool={tool} setTool={setTool} tip={`${t.toolbar.comment} · C`}>
+        <MessageCircle size={ICON} />
       </ToolBtn>
-      <div className="co-toolbar-sep" />
-      <ToolBtn k="text" tool={tool} setTool={setTool} title={t.toolbar.text}>
-        <Type size={18} />
+      <ToolBtn k="text" tool={tool} setTool={setTool} tip={`${t.toolbar.text} · T`}>
+        <Type size={ICON} />
       </ToolBtn>
-      <ToolBtn k="arrow" tool={tool} setTool={setTool} title={t.toolbar.arrow}>
-        <ArrowUpRight size={18} />
+      <ToolBtn k="arrow" tool={tool} setTool={setTool} tip={`${t.toolbar.arrow} · A`}>
+        <ArrowUpRight size={ICON} />
       </ToolBtn>
       <button
         type="button"
-        className="co-toolbar-btn"
+        className="ib tt"
+        data-tt={t.toolbar.addNode}
+        aria-label={t.toolbar.addNode}
         onClick={onAddNode}
-        title={t.toolbar.addNode}
       >
-        <Plus size={18} />
+        <Plus size={ICON} />
       </button>
     </div>
   );
@@ -77,20 +76,23 @@ function ToolBtn({
   k,
   tool,
   setTool,
-  title,
+  tip,
   children,
 }: {
   k: CanvasTool;
   tool: CanvasTool;
   setTool: (t: CanvasTool) => void;
-  title: string;
+  tip: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className={cn("co-toolbar-btn", tool === k && "active")}
-      title={title}
+      className="ib tt"
+      data-tt={tip}
+      data-on={tool === k ? "1" : "0"}
+      aria-label={tip}
+      aria-pressed={tool === k}
       onClick={() => setTool(k)}
     >
       {children}

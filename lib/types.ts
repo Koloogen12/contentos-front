@@ -67,6 +67,8 @@ export interface LlmNodeData {
   messages?: LlmChatMessage[];
   title?: string | null;
   system_prompt?: string | null;
+  /** «assistant» — помощник по материалу, «red_team» — оппонент. */
+  mode?: "assistant" | "red_team" | null;
 }
 
 export interface LlmChatResponse {
@@ -527,6 +529,28 @@ export interface VoiceTraitsExtracted {
   voice_avoid: string[];
   recurring_phrases: string[];
   tone_calibration: string;
+  samples_analyzed: number;
+}
+
+/**
+ * Редполитика — контекст, который голос из образцов не даёт: кто читатель,
+ * где живёт текст, какой регистр, какие слова обязательны, на что текст
+ * опирается. Хранится в brand context и подмешивается во все генерации.
+ */
+export interface Redpolitika {
+  reader: string;
+  /** Площадка → как там звучит текст. Площадка задаёт регистр. */
+  platforms: Record<string, string>;
+  register: string;
+  register_exceptions: string;
+  lexicon_forbidden: string[];
+  lexicon_required: string[];
+  evidence_base: string[];
+}
+
+/** Черновик по образцам: `gaps` — то, чего в текстах не видно. */
+export interface RedpolitikaDraft extends Redpolitika {
+  gaps: string[];
   samples_analyzed: number;
 }
 

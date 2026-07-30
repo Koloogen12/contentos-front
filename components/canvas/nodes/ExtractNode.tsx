@@ -49,6 +49,10 @@ import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { EditableText } from "@/components/canvas/EditableText";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import {
+  PORT_STYLE_LEFT,
+  PORT_STYLE_RIGHT,
+} from "./NodeShell";
 
 const SPAWN_PLATFORMS: ReadonlyArray<{
   k: FormatPlatform;
@@ -152,20 +156,20 @@ export function ExtractNode({ data, selected }: NodeProps) {
       >
         <ArrowRight size={12} />
       </Handle>
-      <div className="co-node-label">
+      <div className="nlabel">
         <Sparkles size={12} />
         <span>{t.extract.label}</span>
       </div>
       <div
         className={cn(
-          "co-node-shell",
-          selected && "selected",
+          "nbox",
+          selected && "sel",
           status === "running" && "running",
           status === "done" && "done",
           status === "error" && "error",
         )}
       >
-        <span className={`co-node-status-dot ${status ?? "idle"}`} />
+        <span className={`nstatus ${status ?? "idle"}`} />
         <Handle
           type="source"
           position={Position.Right}
@@ -181,7 +185,7 @@ export function ExtractNode({ data, selected }: NodeProps) {
           <ArrowRight size={12} />
         </Handle>
 
-        <div className="co-node-content">
+        <div className="nbody">
           {!hasInput && (
             <div className="co-placeholder-empty">
               <ArrowRight
@@ -1184,23 +1188,4 @@ function SceneCard({
   );
 }
 
-const PORT_STYLE_RIGHT: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  background: "var(--port-bg)",
-  border: "1px solid rgba(0, 0, 0, 0.06)",
-  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
-  right: -13,
-  color: "rgb(var(--ink-rgb) / 0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 3,
-};
 
-const PORT_STYLE_LEFT: React.CSSProperties = {
-  ...PORT_STYLE_RIGHT,
-  right: undefined,
-  left: -13,
-};
