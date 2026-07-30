@@ -56,6 +56,12 @@ export interface CanvasNodeContextValue {
     platform: FormatPlatform,
   ) => Promise<void>;
   /**
+   * Рецензия на весь материал: нода контента с platform="review" и связь
+   * без tezis_index. Через карточку идеи такую не создать — там индекс
+   * ставится всегда.
+   */
+  spawnReviewFromExtract: (extractNodeId: string) => Promise<void>;
+  /**
    * When true, the node renders in a non-interactive read-only flavor:
    * no Run / Publish / autosave / mutating UI. Used by the public viewer.
    */

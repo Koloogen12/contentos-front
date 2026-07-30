@@ -13,6 +13,7 @@ import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
+  BookOpen,
   FileText,
   Film,
   Hash,
@@ -78,6 +79,7 @@ export function ExtractNode({ data, selected }: NodeProps) {
     attachSkillRun,
     readOnly,
     spawnFormatFromTezis,
+    spawnReviewFromExtract,
   } = useCanvasNodeContext();
   const status = node.status;
   const running = isRunning(node.id);
@@ -382,6 +384,24 @@ export function ExtractNode({ data, selected }: NodeProps) {
 
               {!readOnly && (
                 <div className="flex items-center gap-2 flex-wrap mt-1">
+                  {/* Действие на уровне ноды, а не карточки: рецензия читает
+                      весь материал, поэтому связь создаётся без tezis_index.
+                      Через «Создать пост» на карточке так не сделать — там
+                      индекс проставляется всегда. */}
+                  <button
+                    type="button"
+                    className="co-btn co-btn-ghost nodrag"
+                    title="Один разбор на весь материал: оценка, главное, тезисы по темам"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void spawnReviewFromExtract(node.id);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    disabled={running || tweakMutation.isPending}
+                  >
+                    <BookOpen size={11} />
+                    Рецензия на материал
+                  </button>
                   <button
                     type="button"
                     className="co-btn co-btn-ghost nodrag"

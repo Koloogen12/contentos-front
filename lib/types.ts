@@ -217,7 +217,9 @@ export type FormatPlatform =
   | "hooks"
   | "article"
   // Рецензия на весь материал целиком, а не на один тезис.
-  | "review";
+  | "review"
+  // Материал для vc.ru: требования модерации площадки, а не просто стиль.
+  | "vc";
 
 export interface CarouselSlide {
   title: string;

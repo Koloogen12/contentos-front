@@ -101,10 +101,12 @@ const PLATFORM_LIST: ReadonlyArray<{
   { k: "article", label: "Статья", Icon: Newspaper },
   // Единственный формат, который берёт весь материал целиком.
   { k: "review", label: "Рецензия", Icon: BookOpen },
+  { k: "vc", label: "vc.ru", Icon: Newspaper },
 ];
 
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
   review: "Рецензия",
+  vc: "vc.ru",
   telegram: "Telegram",
   linkedin: "LinkedIn",
   twitter: "X / Twitter",
@@ -395,7 +397,20 @@ export function FormatNode({ data, selected }: NodeProps) {
               extract has talking_points. Per-format-node selection is
               stored in `data.source_talking_point_index`; falls back to
               the parent's `selected_index` when unset. */}
-          {upstreamPoints.length > 0 && (
+          {/* Рецензия читает весь материал, поэтому выбор тезиса ей не нужен
+              и вводил бы в заблуждение: связь создаётся без tezis_index, и
+              бэкенд берёт все тезисы независимо от того, что выбрано. */}
+          {platform === "review" && (
+            <div className="co-idea-picker">
+              <span className="co-field-label">
+                {upstreamPoints.length > 0
+                  ? `По всему материалу · ${upstreamPoints.length} ${plural(upstreamPoints.length, "тезис", "тезиса", "тезисов")} в основе`
+                  : "По всему материалу целиком"}
+              </span>
+            </div>
+          )}
+
+          {platform !== "review" && upstreamPoints.length > 0 && (
             <div className="co-idea-picker">
               <label className="co-field-label" htmlFor={`idea-${node.id}`}>
                 Из тезиса:
@@ -637,6 +652,8 @@ export function FormatNode({ data, selected }: NodeProps) {
                     void updateNodeData(node.id, next);
                   }}
                 />
+              ) : platform === "vc" ? (
+                <VcBody format={format} />
               ) : platform === "review" ? (
                 <ReviewBody format={format} />
               ) : platform === "article" ? (
@@ -1724,6 +1741,15 @@ void Sparkles;
  * Только чтение — правка рецензии целиком делается в модалке просмотра,
  * как у статьи; здесь важно видеть структуру, а не редактировать её в ноде.
  */
+/** Русские падежи для счётчика тезисов. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
 function ReviewBody({ format }: { format: FormatNodeData }) {
   const sections = format.sections ?? [];
   const keyPoints = (format as { key_points?: string[] }).key_points ?? [];
@@ -1797,6 +1823,103 @@ function ReviewBody({ format }: { format: FormatNodeData }) {
       <div className="text-[10px] text-muted-foreground">
         {format.word_count ? `${format.word_count} слов` : ""}
         {tezisCount ? ` · по ${tezisCount} тезисам` : ""}
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Вывод материала для vc.ru. Кроме текста показывает самопроверку —
+ * ради неё формат и отличается от обычной статьи: у площадки свои
+ * основания для коммерческого статуса, и увидеть риски надо ДО публикации,
+ * а не после того, как материал скрыли из лент.
+ */
+function VcBody({ format }: { format: FormatNodeData }) {
+  const f = format as FormatNodeData & {
+    subtitle?: string;
+    ending?: string;
+    missing_facts?: string[];
+    self_check?: {
+      numbers_used?: string[];
+      failure_described?: string;
+      survives_product_cut?: boolean;
+      risks?: string[];
+      active_links?: string[];
+    };
+  };
+  const check = f.self_check ?? {};
+  const links = check.active_links ?? [];
+  const numbers = check.numbers_used ?? [];
+  const risks = check.risks ?? [];
+  const missing = f.missing_facts ?? [];
+
+  return (
+    <div className="flex flex-col gap-2.5 text-[11.5px] leading-snug">
+      {f.title && (
+        <div className="text-[13px] font-semibold text-foreground">{f.title}</div>
+      )}
+      {f.subtitle && <div className="text-muted-foreground">{f.subtitle}</div>}
+
+      {/* Светофор перед публикацией. Активная ссылка — самая частая и самая
+          механическая причина коммерческого статуса, поэтому она первой. */}
+      <div className="flex flex-col gap-1 rounded-md border border-border/60 bg-muted p-2">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Проверка перед публикацией
+        </div>
+        <div className={links.length ? "text-destructive" : "text-success"}>
+          {links.length
+            ? `Активные ссылки: ${links.length} — снять, иначе коммерческий статус`
+            : "Активных ссылок нет"}
+        </div>
+        <div className={numbers.length >= 3 ? "text-success" : "text-warn"}>
+          {`Конкретных чисел: ${numbers.length}${numbers.length >= 3 ? "" : " — площадка ждёт минимум три"}`}
+        </div>
+        <div className={check.failure_described ? "text-success" : "text-warn"}>
+          {check.failure_described
+            ? `Описан провал: ${check.failure_described}`
+            : "Провала нет — материал прочтётся как реклама"}
+        </div>
+        <div className={check.survives_product_cut ? "text-success" : "text-destructive"}>
+          {check.survives_product_cut
+            ? "Полезен без упоминаний продукта"
+            : "Без продукта разваливается — это продвижение"}
+        </div>
+        {risks.map((r, i) => (
+          <div key={i} className="text-warn">
+            — {r}
+          </div>
+        ))}
+      </div>
+
+      {(f.sections ?? []).map((sec, i) => (
+        <div key={i}>
+          {sec.heading && (
+            <div className="mb-1 font-medium text-foreground">{sec.heading}</div>
+          )}
+          <div className="whitespace-pre-wrap text-muted-foreground">{sec.body}</div>
+        </div>
+      ))}
+
+      {f.ending && <div className="text-foreground">{f.ending}</div>}
+
+      {missing.length > 0 && (
+        <div>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            Чего не хватает — добыть автору
+          </div>
+          <ul className="flex flex-col gap-1">
+            {missing.map((m, i) => (
+              <li key={i} className="text-warn">
+                — {m}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="text-[10px] text-muted-foreground">
+        {f.word_count ? `${f.word_count} слов` : ""}
       </div>
     </div>
   );

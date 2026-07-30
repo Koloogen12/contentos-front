@@ -235,6 +235,9 @@ function PublicCanvasInner({
       spawnFormatFromTezis: async () => {
         /* read-only */
       },
+      spawnReviewFromExtract: async () => {
+        /* read-only */
+      },
       readOnly: true,
     }),
     [getNodeSnapshot],

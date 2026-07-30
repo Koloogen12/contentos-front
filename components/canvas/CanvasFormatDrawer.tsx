@@ -56,6 +56,7 @@ import { t } from "@/lib/i18n";
 
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
   review: "Рецензия",
+  vc: "vc.ru",
   telegram: "Telegram",
   linkedin: "LinkedIn",
   twitter: "X / Twitter",

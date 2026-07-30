@@ -196,8 +196,12 @@ export const t = {
       reels: "Написать сценарий",
       hooks: "Сгенерить хуки",
       article: "Написать статью",
+      review: "Написать рецензию",
+      vc: "Написать на vc.ru",
     } as Record<string, string>,
     runningStatusByPlatform: {
+      review: "Разбираю материал...",
+      vc: "Пишу материал для vc...",
       telegram: "Пишу пост...",
       linkedin: "Пишу пост...",
       twitter: "Пишу твит...",

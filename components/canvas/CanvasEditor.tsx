@@ -668,6 +668,64 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
    * kludge in FormatNode keeps running but is now no-op (backend prefers
    * the edge.data.tezis_index regardless).
    */
+  /**
+   * Рецензия на весь материал, а не на один тезис.
+   *
+   * Отличие от spawnFormatFromTezis: связь создаётся БЕЗ tezis_index —
+   * именно по его отсутствию бэкенд понимает, что брать надо все тезисы
+   * и текст источника целиком (см. brand_context.collect_input_for_skill).
+   * Через карточку идеи такую ноду не сделать: там индекс проставляется
+   * всегда, поэтому нужен отдельный вход на уровне ноды.
+   */
+  const spawnReviewFromExtract = React.useCallback(
+    async (extractNodeId: string) => {
+      const extract = getNodeSnapshot(extractNodeId);
+      if (!extract || extract.type !== "extract") {
+        toast.error("Не удалось найти ноду идей");
+        return;
+      }
+      const extractData = (extract.data ?? {}) as ExtractNodeData;
+      const tezisCount = (extractData.talking_points ?? []).length;
+
+      try {
+        const created = await createNode(canvasId, {
+          type: "format",
+          position_x: extract.position_x + 480,
+          position_y: extract.position_y - 60,
+          data: {
+            platform: "review",
+            hooks: [],
+            selected_hook_index: 0,
+            body: "",
+            cta: "",
+            full_text: "",
+          },
+        });
+        setRfNodes((prev) => [...prev, buildRfNode(created)]);
+
+        const edge = await createEdge(canvasId, {
+          source_node_id: extractNodeId,
+          target_node_id: created.id,
+          data: {},
+        });
+        setRfEdges((prev) => [...prev, buildRfEdge(edge, new Set())]);
+
+        qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+        setSelectedNodeId(created.id);
+        toast.success(
+          tezisCount > 0
+            ? `Рецензия на весь материал (${tezisCount} тезисов в основе)`
+            : "Рецензия на весь материал",
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.detail : "Не удалось создать рецензию",
+        );
+      }
+    },
+    [canvasId, getNodeSnapshot, qc, setRfEdges, setRfNodes, setSelectedNodeId],
+  );
+
   const spawnFormatFromTezis = React.useCallback(
     async (extractNodeId: string, tezisIndex: number, platform: FormatPlatform) => {
       const extract = getNodeSnapshot(extractNodeId);
@@ -1333,6 +1391,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getCanvas,
       isRunning,
       spawnFormatFromTezis,
+      spawnReviewFromExtract,
     }),
     [
       updateNodeData,
@@ -1343,6 +1402,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getCanvas,
       isRunning,
       spawnFormatFromTezis,
+      spawnReviewFromExtract,
     ],
   );
 
