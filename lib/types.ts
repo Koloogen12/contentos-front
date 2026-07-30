@@ -823,4 +823,18 @@ export interface IntegrationOut {
   setup_hint: string;
   /** Ограничение или цена площадки, о которых честно предупреждаем. */
   caveat: string;
+  /** "native" — подключается нашей ручкой, "gateway" — через внешний шлюз. */
+  connect_via: "native" | "gateway";
+}
+
+/** Аккаунт площадки, подключённый через внешний шлюз. */
+export interface SocialAccountOut {
+  id: string;
+  provider: string;
+  platform: string;
+  display_name: string;
+  username: string | null;
+  avatar_url: string | null;
+  is_default: boolean;
+  is_active: boolean;
 }

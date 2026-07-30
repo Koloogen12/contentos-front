@@ -24,6 +24,7 @@ import { listIntegrations } from "@/lib/integrations";
 import type { IntegrationOut, IntegrationStatus } from "@/lib/types";
 import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
 import { LinkedInAccountsSection } from "@/components/LinkedInAccountsSection";
+import { GatewayAccounts } from "@/components/connections/GatewayAccounts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrialRedirect } from "@/components/TrialRedirect";
 
@@ -106,9 +107,18 @@ export default function ConnectionsPage() {
             {byId.linkedin?.status === "ready" && <LinkedInAccountsSection />}
           </IntegrationCard>
 
-          {["x", "instagram", "threads"].map((id) => (
-            <IntegrationCard key={id} item={byId[id]} />
-          ))}
+          {/* Площадки через шлюз: подключение одинаковое, поэтому и
+              компонент один — отличается только идентификатор. */}
+          {["instagram", "threads", "x"].map((id) => {
+            const item = byId[id];
+            return (
+              <IntegrationCard key={id} item={item}>
+                {item?.status === "ready" && (
+                  <GatewayAccounts platform={id} platformName={item.name} />
+                )}
+              </IntegrationCard>
+            );
+          })}
         </>
       )}
     </div>

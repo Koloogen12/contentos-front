@@ -9,10 +9,16 @@ import { ApiError } from "@/lib/api";
 import {
   listTargets,
   publishNode,
+  publishNodeToAccount,
   subscribePublishLog,
 } from "@/lib/publish";
 import { getBotInfo } from "@/lib/telegram-targets";
-import type { PublishLogOut, TelegramTargetOut } from "@/lib/types";
+import { listSocialAccounts } from "@/lib/integrations";
+import type {
+  PublishLogOut,
+  SocialAccountOut,
+  TelegramTargetOut,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,8 +58,22 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
     ? `@${botInfoQuery.data.username}`
     : null;
 
+  // Аккаунты шлюза лежат рядом с телеграм-каналами: для пользователя это
+  // один вопрос «куда публикуем», а не два разных механизма.
+  const socialQuery = useQuery({
+    queryKey: ["social-accounts"],
+    queryFn: listSocialAccounts,
+    enabled: open,
+  });
+
   const targets = targetsQuery.data ?? [];
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const socialAccounts = (socialQuery.data ?? []).filter((a) => a.is_active);
+  const hasAnyTarget = targets.length > 0 || socialAccounts.length > 0;
+  // Идентификаторы из разных таблиц могут совпасть только теоретически,
+  // но путать телеграм-канал с аккаунтом Instagram нельзя — храним вид.
+  const [selected, setSelected] = React.useState<
+    { kind: "telegram" | "social"; id: string } | null
+  >(null);
   const [publishLogId, setPublishLogId] = React.useState<string | null>(null);
   const [terminalLog, setTerminalLog] = React.useState<PublishLogOut | null>(
     null,
@@ -61,10 +81,16 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
 
   // Auto-select default when targets load.
   React.useEffect(() => {
-    if (selectedId || targets.length === 0) return;
-    const def = targets.find((t) => t.is_default) ?? targets[0];
-    setSelectedId(def.id);
-  }, [targets, selectedId]);
+    if (selected) return;
+    if (targets.length > 0) {
+      const def = targets.find((t) => t.is_default) ?? targets[0];
+      setSelected({ kind: "telegram", id: def.id });
+      return;
+    }
+    if (socialAccounts.length > 0) {
+      setSelected({ kind: "social", id: socialAccounts[0].id });
+    }
+  }, [targets, socialAccounts, selected]);
 
   // Reset transient state when dialog closes.
   React.useEffect(() => {
@@ -95,7 +121,10 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
   }, [publishLogId]);
 
   const publishMutation = useMutation({
-    mutationFn: (targetId: string) => publishNode(nodeId, targetId),
+    mutationFn: (target: { kind: "telegram" | "social"; id: string }) =>
+      target.kind === "telegram"
+        ? publishNode(nodeId, target.id)
+        : publishNodeToAccount(nodeId, target.id),
     onSuccess: ({ publish_log_id }) => {
       setPublishLogId(publish_log_id);
       qc.invalidateQueries({ queryKey: ["telegram-targets"] });
@@ -153,13 +182,13 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
               ? targetsQuery.error.detail
               : t.publish.couldNotLoad}
           </div>
-        ) : targets.length === 0 ? (
+        ) : !hasAnyTarget ? (
           <div className="rounded-md border border-border bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground">
             <p>{t.publish.noTargetsTitle}</p>
             <p className="mt-1 text-xs">
               {t.publish.noTargetsSub}{" "}
               <Link
-                href="/settings"
+                href="/connections"
                 className="text-primary hover:underline"
                 onClick={() => onOpenChange(false)}
               >
@@ -172,13 +201,24 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
           <PublishResult log={terminalLog} />
         ) : (
           <ul className="space-y-1.5">
-            {targets.map((t) => (
+            {targets.map((tg) => (
               <TargetRow
-                key={t.id}
-                target={t}
-                selected={selectedId === t.id}
+                key={tg.id}
+                target={tg}
+                selected={
+                  selected?.kind === "telegram" && selected.id === tg.id
+                }
                 disabled={publishing}
-                onSelect={() => setSelectedId(t.id)}
+                onSelect={() => setSelected({ kind: "telegram", id: tg.id })}
+              />
+            ))}
+            {socialAccounts.map((a) => (
+              <SocialRow
+                key={a.id}
+                account={a}
+                selected={selected?.kind === "social" && selected.id === a.id}
+                disabled={publishing}
+                onSelect={() => setSelected({ kind: "social", id: a.id })}
               />
             ))}
           </ul>
@@ -199,12 +239,12 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
                 {t.common.cancel}
               </Button>
               <Button
-                onClick={() => selectedId && publishMutation.mutate(selectedId)}
+                onClick={() => selected && publishMutation.mutate(selected)}
                 disabled={
-                  !selectedId ||
+                  !selected ||
                   publishing ||
                   publishMutation.isPending ||
-                  targets.length === 0
+                  !hasAnyTarget
                 }
               >
                 {publishing || publishMutation.isPending ? (
@@ -314,5 +354,62 @@ function PublishResult({ log }: { log: PublishLogOut }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Строка выбора аккаунта, подключённого через шлюз. Отдельно от TargetRow:
+ * у телеграм-канала показывается handle и признак «по умолчанию», у
+ * аккаунта площадки — аватар и площадка, к которой он относится.
+ */
+function SocialRow({
+  account,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  account: SocialAccountOut;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={disabled}
+        aria-pressed={selected}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-[12px] border px-3 py-2.5 text-left transition",
+          selected
+            ? "border-[color:var(--p-or)] bg-[color:var(--p-or-soft)]"
+            : "border-[color:var(--p-line)] hover:border-[color:var(--p-line-2)]",
+          disabled && "cursor-not-allowed opacity-60",
+        )}
+      >
+        {account.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={account.avatar_url}
+            alt=""
+            className="h-8 w-8 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <span className="av" style={{ width: 32, height: 32, fontSize: 13 }}>
+            {account.display_name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13.5px] font-medium">
+            {account.display_name}
+          </div>
+          <div className="kmeta" style={{ marginTop: 2 }}>
+            {account.platform}
+            {account.username ? ` · @${account.username}` : ""}
+          </div>
+        </div>
+      </button>
+    </li>
   );
 }

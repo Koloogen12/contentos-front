@@ -105,3 +105,18 @@ export function subscribePublishLog(
     if (timer) clearTimeout(timer);
   };
 }
+
+/**
+ * Публикация в аккаунт, подключённый через внешний шлюз (Instagram,
+ * Threads, X). Отдельно от publishNode, который остался за Telegram: у
+ * того своя таблица целей и свой сбор метрик.
+ */
+export async function publishNodeToAccount(
+  nodeId: string,
+  socialAccountId: string,
+): Promise<PublishStarted> {
+  return apiFetch<PublishStarted>(
+    `/api/v1/nodes/${nodeId}/publish-to-account`,
+    { method: "POST", body: { social_account_id: socialAccountId } },
+  );
+}
