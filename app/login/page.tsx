@@ -8,9 +8,19 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { ApiError, fetchMe, loginRequest } from "@/lib/api";
+import {
+  ApiError,
+  EMAIL_NOT_VERIFIED,
+  fetchMe,
+  loginRequest,
+  resendCodeRequest,
+} from "@/lib/api";
+import type { VerificationRequired } from "@/lib/api";
+import type { TokenPair } from "@/lib/types";
 import { decidePostAuthRoute } from "@/lib/post-auth-redirect";
 import { AuthCard } from "@/components/AuthCard";
+import { AuthDivider, YandexButton } from "@/components/auth/YandexButton";
+import { EmailCodeStep } from "@/components/auth/EmailCodeStep";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +49,13 @@ function LoginForm() {
   const setHydrating = useAuthStore((s) => s.setHydrating);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
+  // Адрес зарегистрирован, но не подтверждён: показываем шаг с кодом вместо
+  // «неверный пароль» — пароль-то верный, не хватает подтверждения.
+  const [pending, setPending] = React.useState<VerificationRequired | null>(null);
+
+  // Ошибка вернулась редиректом от бэкенда после OAuth-круга.
+  const yandexError = searchParams.get("yandex_error");
+
   const {
     register,
     handleSubmit,
@@ -48,10 +65,8 @@ function LoginForm() {
     defaultValues: { email: "", password: "" },
   });
 
-  const onSubmit = handleSubmit(async (values) => {
-    setServerError(null);
-    try {
-      const tokens = await loginRequest(values);
+  const finishAuth = React.useCallback(
+    async (tokens: TokenPair) => {
       setTokens({
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -59,10 +74,33 @@ function LoginForm() {
       const me = await fetchMe();
       setMe({ user: me.user, organization: me.organization });
       setHydrating(false);
-      const route = await decidePostAuthRoute({ next });
-      router.replace(route);
+      router.replace(await decidePostAuthRoute({ next }));
+    },
+    [next, router, setHydrating, setMe, setTokens],
+  );
+
+  const onSubmit = handleSubmit(async (values) => {
+    setServerError(null);
+    try {
+      await finishAuth(await loginRequest(values));
     } catch (err) {
       if (err instanceof ApiError) {
+        if (err.status === 403 && err.detail === EMAIL_NOT_VERIFIED) {
+          // Досылаем код и уводим на шаг подтверждения. Если отправка
+          // упирается в кулдаун — прошлый код ещё жив, шаг всё равно нужен.
+          try {
+            setPending(await resendCodeRequest({ email: values.email }));
+          } catch {
+            setPending({
+              email: values.email,
+              verification_required: true,
+              code_delivered: true,
+              resend_cooldown_seconds: 60,
+              code_ttl_minutes: 15,
+            });
+          }
+          return;
+        }
         setServerError(err.detail || "Не удалось войти. Попробуй ещё раз.");
       } else {
         setServerError("Ошибка сети. Попробуй ещё раз.");
@@ -70,10 +108,28 @@ function LoginForm() {
     }
   });
 
+  if (pending) {
+    return (
+      <AuthCard
+        title="Подтверди адрес"
+        subtitle="Аккаунт создан, но адрес не подтверждён."
+      >
+        <EmailCodeStep
+          email={pending.email}
+          codeDelivered={pending.code_delivered}
+          cooldownSeconds={pending.resend_cooldown_seconds}
+          ttlMinutes={pending.code_ttl_minutes}
+          onVerified={finishAuth}
+          onChangeEmail={() => setPending(null)}
+        />
+      </AuthCard>
+    );
+  }
+
   return (
     <AuthCard
       title="С возвращением"
-      subtitle="Войди в свой воркспейс THE CONTENT."
+      subtitle="Войди в свой воркспейс THE DRAFT."
       footer={
         <>
           Впервые здесь?{" "}
@@ -90,7 +146,23 @@ function LoginForm() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-5">
+      <div className="space-y-5">
+        {yandexError && (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {yandexError === "no_email"
+              ? "Яндекс не отдал адрес почты — разреши доступ к email или войди по паролю."
+              : yandexError === "cancelled"
+                ? "Вход через Яндекс отменён."
+                : "Не удалось войти через Яндекс. Попробуй ещё раз или войди по паролю."}
+          </div>
+        )}
+        <YandexButton next={next} />
+        <AuthDivider text="или по почте" />
+      </div>
+      <form onSubmit={onSubmit} className="mt-5 space-y-5">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input

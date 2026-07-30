@@ -121,3 +121,29 @@ export async function bulkUpdateKnowledgeProject(
     },
   );
 }
+
+
+// ---------------------------------------------------------------------------
+// Brain-dump → tezis proposals (NOT auto-saved)
+// ---------------------------------------------------------------------------
+
+export interface BrainDumpProposal {
+  title: string;
+  body: string;
+  viral_score: number;
+  pillar: ContentPillar | null;
+  tags: string[];
+}
+
+export interface BrainDumpResponse {
+  proposals: BrainDumpProposal[];
+}
+
+/** Parse a free-form thought into 3-7 tezis proposals.
+ *  No DB writes here — the user picks which to save via `createKnowledge`. */
+export async function brainDump(text: string): Promise<BrainDumpResponse> {
+  return apiFetch<BrainDumpResponse>("/api/v1/knowledge/brain-dump", {
+    method: "POST",
+    body: { text },
+  });
+}

@@ -24,6 +24,29 @@ export async function getPublishLog(id: string): Promise<PublishLogOut> {
   return apiFetch<PublishLogOut>(`/api/v1/publish-logs/${id}`);
 }
 
+/** All publish attempts for one node, newest-first. Used by the FormatNode
+ *  to render the metrics chip + history dropdown. */
+export async function listNodePublishLogs(
+  nodeId: string,
+): Promise<PublishLogOut[]> {
+  return apiFetch<PublishLogOut[]>(
+    `/api/v1/nodes/${nodeId}/publish-logs`,
+  );
+}
+
+/** Synchronously refresh `metrics` for a published post by re-scraping the
+ *  public t.me web view. Returns the updated PublishLog. The 6-hour cron
+ *  keeps this fresh in the background; this endpoint is for "I just hit
+ *  refresh" manual pulls. */
+export async function refreshPublishLogMetrics(
+  publishLogId: string,
+): Promise<PublishLogOut> {
+  return apiFetch<PublishLogOut>(
+    `/api/v1/publish-logs/${publishLogId}/refresh-metrics`,
+    { method: "POST" },
+  );
+}
+
 export interface PublishLogHandlers {
   onStatus?: (status: PublishStatus) => void;
   onComplete?: (log: PublishLogOut) => void;

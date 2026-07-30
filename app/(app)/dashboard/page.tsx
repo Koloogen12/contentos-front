@@ -10,18 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  AlertTriangle,
-  LibraryBig,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Settings,
-  Trash2,
-  Copy as CopyIcon,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Copy as CopyIcon, LibraryBig, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import {
   duplicateCanvas,
@@ -30,6 +19,8 @@ import {
   listCanvasTemplates,
 } from "@/lib/canvases";
 import { listProjects } from "@/lib/projects";
+import { listVoiceSamples } from "@/lib/voice";
+import { getPerformanceOverview } from "@/lib/performance";
 import type {
   CanvasDetail,
   CanvasOut,
@@ -45,6 +36,7 @@ import { RenameCanvasDialog } from "@/components/RenameCanvasDialog";
 import { DeleteCanvasDialog } from "@/components/DeleteCanvasDialog";
 import { TemplatesPickerDialog } from "@/components/canvas/TemplatesPickerDialog";
 import { WhatToWriteWidget } from "@/components/plan/WhatToWriteWidget";
+import { useAuthStore } from "@/stores/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +47,7 @@ import {
 export default function DashboardPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const organization = useAuthStore((s) => s.organization);
   const projectId = searchParams.get("project");
   const [search, setSearch] = React.useState("");
   const [templatesOpen, setTemplatesOpen] = React.useState(false);
@@ -66,9 +59,16 @@ export default function DashboardPage() {
   );
 
   const canvasesQuery = useQuery({
-    queryKey: ["canvases", { projectId: projectId ?? null }],
+    queryKey: ["canvases", { projectId: projectId ?? null, recents: true }],
+    // "Недавние" must NEVER include templates — otherwise the user's own
+    // canvas (named e.g. "YouTube → Telegram") sits next to the auto-seeded
+    // template with the same name, and clicking the wrong one drops the
+    // user into a stale canvas instead of a fresh template-spawn.
     queryFn: () =>
-      listCanvases(projectId ? { project_id: projectId } : {}),
+      listCanvases({
+        project_id: projectId ?? undefined,
+        is_template: false,
+      }),
   });
 
   const templatesQuery = useQuery({
@@ -79,6 +79,17 @@ export default function DashboardPage() {
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: listProjects,
+  });
+
+  // Онбординг-полоса из прототипа: три шага. Состояние берём из настоящих
+  // данных, чтобы полоса не врала — образцы голоса, канвасы, публикации.
+  const voiceQuery = useQuery({
+    queryKey: ["voice-samples"],
+    queryFn: listVoiceSamples,
+  });
+  const perfQuery = useQuery({
+    queryKey: ["performance-overview"],
+    queryFn: getPerformanceOverview,
   });
 
   const activeProject: ProjectOut | null = React.useMemo(() => {
@@ -97,136 +108,176 @@ export default function DashboardPage() {
     );
   }, [canvasesQuery.data, search]);
 
+  // Три шага онбординга — структура и копия из прототипа
+  // (prime2-shell.jsx#CanvasesScreen), состояние из настоящих данных.
+  const voiceSamples = voiceQuery.data?.length ?? 0;
+  const canvasCount = canvasesQuery.data?.length ?? 0;
+  const publishedCount = perfQuery.data?.total_posts ?? 0;
+  const steps: {
+    title: string;
+    desc: string;
+    done: boolean;
+    href: string;
+    note: string;
+  }[] = [
+    {
+      title: "Подключи голос",
+      desc: "Ссылка на твой канал — система разберёт, как ты пишешь. Полторы минуты, один раз.",
+      done: voiceSamples > 0,
+      href: "/voice",
+      note:
+        voiceSamples > 0
+          ? `Голос обучен · ${voiceSamples} ${plural(voiceSamples, "образец", "образца", "образцов")}`
+          : "Голос ещё не подключён",
+    },
+    {
+      title: "Брось материал",
+      desc: "Голосовое, запись созвона, чужая статья или мысль в одну строку.",
+      done: canvasCount > 0,
+      href: "/dashboard",
+      note:
+        canvasCount > 0
+          ? `${canvasCount} ${plural(canvasCount, "материал", "материала", "материалов")} в работе`
+          : "Ни одного материала пока нет",
+    },
+    {
+      title: "Выбери идею и опубликуй",
+      desc: "Смотришь идеи с оценкой потенциала, получаешь пост, ставишь в план.",
+      done: publishedCount > 0,
+      href: "/ideas",
+      note:
+        publishedCount > 0
+          ? `${publishedCount} ${plural(publishedCount, "пост", "поста", "постов")} опубликовано`
+          : "Ни один пост ещё не опубликован",
+    },
+  ];
+  const doneCount = steps.filter((st) => st.done).length;
+  const allDone = doneCount === steps.length;
+
   return (
-    <div className="co-dashboard">
-      <div className="co-dashboard-bg" />
-      <div className="co-dash-container">
-        <div className="co-dash-brand">
-          <span className="co-dash-brand-dot" />
-          {t.brandName}
+    <div className="pad">
+      <div className="ph">
+        <div>
+          <h1>Канвасы</h1>
+          <p>
+            Каждый материал — отдельный канвас: источник, идеи, готовые посты.
+            {allDone ? "" : " Осталось закрыть шаг настройки."}
+          </p>
         </div>
-        <h1 className="co-dash-h1">
-          {t.dash.h1Line1}{" "}
-          <span className="co-dash-h1-muted">{t.dash.h1Line2}</span>
-        </h1>
-        <p className="co-dash-sub">{t.dash.sub}</p>
-
-        {activeProject && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[12px] text-[color:var(--text-tertiary)]">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: activeProject.color }}
-            />
-            {activeProject.name}
-          </div>
-        )}
-
-        <div className="co-dash-search-row">
-          <div className="co-dash-search-wrap">
-            <Search size={16} className="co-dash-search-icon" />
-            <input
-              className="co-dash-search"
-              placeholder={t.dash.searchPlaceholder}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <CreateCanvasDialog
-            defaultProjectId={projectId}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" /> {t.dash.newCanvas}
-              </Button>
-            }
-          />
+        <div className="r">
           <button
             type="button"
-            className="co-iconbtn"
-            onClick={() => router.push("/settings")}
-            title={t.shell.settings}
+            className="btn btn-or"
+            onClick={() => setTemplatesOpen(true)}
           >
-            <Settings size={16} />
+            <Plus size={16} />
+            Новый канвас
           </button>
         </div>
+      </div>
 
-        <WhatToWriteWidget />
+      {/* Полоса скрывается, когда все шаги закрыты — так в хендоффе. */}
+      {!allDone && (
+        <>
+          <div className="onb-bar">
+            <i style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+          </div>
+          <div className="onb">
+            {steps.map((st, i) => (
+              <div className="onb-c" key={st.title} data-done={st.done ? "1" : "0"}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className="onb-n">
+                    {st.done ? <Check size={13} /> : i + 1}
+                  </span>
+                  <b>{st.title}</b>
+                </div>
+                <p>{st.desc}</p>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    color: st.done ? "var(--p-green)" : "var(--p-ink-3)",
+                  }}
+                >
+                  {st.note}
+                </div>
+                {!st.done && (
+                  <Link
+                    href={st.href}
+                    className="btn btn-or btn-sm"
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    Продолжить
+                    <ArrowRight size={13} />
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-        <div className="co-dash-section-title">{t.dash.sectionRecent}</div>
-
-        {canvasesQuery.isPending ? (
-          <CanvasGridSkeleton />
-        ) : canvasesQuery.isError ? (
-          <CanvasErrorState
-            detail={
-              canvasesQuery.error instanceof ApiError
-                ? canvasesQuery.error.detail
-                : t.dash.couldNotLoad
-            }
-            onRetry={() => canvasesQuery.refetch()}
-          />
-        ) : (
-          <div className="co-dash-grid">
-            <NewCanvasTile defaultProjectId={projectId} />
-            {filtered.map((c) => (
-              <CanvasCard
-                key={c.id}
-                canvas={c}
-                onRename={setRenameTarget}
-                onDelete={setDeleteTarget}
+      <div className="ph" style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 20 }}>В работе</h1>
+        {activeProject && (
+          <div className="r">
+            <span className="chip" style={{ gap: 7 }}>
+              <i
+                aria-hidden
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 99,
+                  background: activeProject.color,
+                  display: "block",
+                }}
               />
-            ))}
-          </div>
-        )}
-
-        <div className="co-dash-section-title">{t.dash.sectionTemplates}</div>
-        {templatesQuery.isPending ? (
-          <CanvasGridSkeleton small />
-        ) : templatesQuery.isError ? (
-          <CanvasErrorState
-            detail={
-              templatesQuery.error instanceof ApiError
-                ? templatesQuery.error.detail
-                : t.dash.couldNotLoad
-            }
-            onRetry={() => templatesQuery.refetch()}
-          />
-        ) : (templatesQuery.data ?? []).length === 0 ? (
-          <div
-            className="co-canvas-card-create"
-            style={{ minHeight: 120, opacity: 0.7 }}
-          >
-            <LibraryBig size={18} />
-            <div style={{ fontSize: 12.5 }}>{t.dashboard.noTemplates}</div>
-            <button
-              type="button"
-              className="co-btn co-btn-ghost"
-              onClick={() => setTemplatesOpen(true)}
-            >
-              {t.dash.useTemplate}
-            </button>
-          </div>
-        ) : (
-          <div className="co-dash-grid">
-            {(templatesQuery.data ?? []).map((tpl) => (
-              <Link
-                key={tpl.id}
-                href={`/canvas/${tpl.id}`}
-                className="co-canvas-card"
-              >
-                <div className="co-canvas-card-thumb">
-                  <CanvasThumb canvasId={tpl.id} />
-                </div>
-                <div className="co-canvas-card-meta">
-                  <div className="co-canvas-card-name">{tpl.name}</div>
-                  <div className="co-canvas-card-info">
-                    {formatRelativeRu(tpl.updated_at)}
-                  </div>
-                </div>
-              </Link>
-            ))}
+              {activeProject.name}
+            </span>
           </div>
         )}
       </div>
+
+      <div className="cvgrid">
+        <div
+          className="cvnew"
+          role="button"
+          tabIndex={0}
+          onClick={() => setTemplatesOpen(true)}
+          onKeyDown={(e) => e.key === "Enter" && setTemplatesOpen(true)}
+        >
+          <Plus size={22} />
+          <b>Новый канвас</b>
+          <span>Пустая доска или шаблон</span>
+        </div>
+
+        {canvasesQuery.isPending
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <div className="cvcard" key={i} aria-hidden>
+                <div className="cvthumb" />
+                <div className="cvcard-b">
+                  <div className="n">&nbsp;</div>
+                  <div className="m mono">загружаем…</div>
+                </div>
+              </div>
+            ))
+          : filtered.map((canvas) => (
+              <CanvasCard
+                key={canvas.id}
+                canvas={canvas}
+                onRename={() => setRenameTarget(canvas)}
+                onDelete={() => setDeleteTarget(canvas)}
+              />
+            ))}
+      </div>
+
+      {canvasesQuery.isError && (
+        <div className="mono" style={{ marginTop: 14, color: "var(--p-red)" }}>
+          {canvasesQuery.error instanceof ApiError
+            ? canvasesQuery.error.detail
+            : "Не удалось загрузить канвасы"}
+        </div>
+      )}
 
       <TemplatesPickerDialog
         open={templatesOpen}
@@ -245,6 +296,15 @@ export default function DashboardPage() {
       />
     </div>
   );
+}
+
+/** Русские падежи для счётчиков в онбординге. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }
 
 function NewCanvasTile({
@@ -284,75 +344,48 @@ function CanvasCard({
   onDelete,
 }: {
   canvas: CanvasOut;
-  onRename: (c: CanvasOut) => void;
-  onDelete: (c: CanvasOut) => void;
+  onRename: () => void;
+  onDelete: () => void;
 }) {
-  const router = useRouter();
-  const qc = useQueryClient();
-  const duplicateMutation = useMutation({
-    mutationFn: () => duplicateCanvas(canvas.id),
-    onSuccess: (clone) => {
-      qc.invalidateQueries({ queryKey: ["canvases"] });
-      toast.success(t.dashboard.duplicateSuccess);
-      router.push(`/canvas/${clone.id}`);
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.detail : t.dashboard.duplicateError,
-      ),
-  });
-
+  // .cvcard из прототипа: миниатюра графа, название, мета, чипы счётчиков.
+  // Меню действий наше — в прототипе его нет, показываем по наведению.
   return (
-    <div className="relative group">
-      <Link href={`/canvas/${canvas.id}`} className="co-canvas-card">
-        <div className="co-canvas-card-thumb">
-          <CanvasThumb canvasId={canvas.id} />
-        </div>
-        <div className="co-canvas-card-meta">
-          <div className="co-canvas-card-name">{canvas.name}</div>
-          <div className="co-canvas-card-info">
-            {formatRelativeRu(canvas.updated_at)}
-          </div>
+    <div className="cvcard group">
+      <Link href={`/canvas/${canvas.id}`} style={{ display: "block" }}>
+        <CanvasThumb canvasId={canvas.id} />
+        <div className="cvcard-b">
+          <div className="n">{canvas.name}</div>
+          <CanvasCardMeta canvasId={canvas.id} updatedAt={canvas.updated_at} />
         </div>
       </Link>
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label={t.dashboard.actions}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-black/60 text-zinc-300 backdrop-blur hover:text-foreground"
-              onClick={(e) => e.preventDefault()}
+              aria-label={`Канвас ${canvas.name}: действия`}
+              className="grid h-7 w-7 place-items-center rounded-lg border border-[color:var(--p-line)] bg-[color:var(--p-card)] text-[color:var(--p-ink-3)] hover:text-[color:var(--p-ink)]"
             >
-              <MoreHorizontal className="h-3.5 w-3.5" />
+              <MoreHorizontal size={14} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem
               onSelect={(e) => {
                 e.preventDefault();
-                onRename(canvas);
+                onRename();
               }}
             >
-              <Pencil className="h-4 w-4" /> {t.dashboard.rename}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={duplicateMutation.isPending}
-              onSelect={(e) => {
-                e.preventDefault();
-                duplicateMutation.mutate();
-              }}
-            >
-              <CopyIcon className="h-4 w-4" /> {t.dashboard.duplicate}
+              <Pencil className="h-3.5 w-3.5" /> Переименовать
             </DropdownMenuItem>
             <DropdownMenuItem
               destructive
               onSelect={(e) => {
                 e.preventDefault();
-                onDelete(canvas);
+                onDelete();
               }}
             >
-              <Trash2 className="h-4 w-4" /> {t.dashboard.delete}
+              <Trash2 className="h-3.5 w-3.5" /> Удалить
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -361,24 +394,51 @@ function CanvasCard({
   );
 }
 
-/**
- * Lightweight per-canvas thumbnail. Lazy-loads the canvas detail (cached
- * for 30s) and renders a real mini-graph SVG with miniature nodes that
- * mirror the real card style: outlined rounded-rect, type icon, optional
- * platform label below.
- */
 function CanvasThumb({ canvasId }: { canvasId: string }) {
   const detail = useCanvasDetail(canvasId);
   if (!detail) return <ThumbPlaceholder />;
   return <ThumbMiniGraph nodes={detail.nodes} edges={detail.edges} />;
 }
 
-const THUMB_W = 240;
-const THUMB_H = 130;
-const NODE_W = 38;
-const NODE_H = 26;
 
 /** Compact platform/type label for the mini-strip below a node. */
+/**
+ * Мета под названием канваса: число нод и когда правили.
+ * Число берём из того же кэша, что и миниатюра (useCanvasDetail), — у списка
+ * канвасов в API этого поля нет, а второй запрос за ним был бы лишним.
+ */
+function CanvasCardMeta({
+  canvasId,
+  updatedAt,
+}: {
+  canvasId: string;
+  updatedAt: string;
+}) {
+  const detail = useCanvasDetail(canvasId);
+  const count = detail?.nodes.length;
+  return (
+    <div className="m mono">
+      {count != null
+        ? `${count} ${plural(count, "нода", "ноды", "нод")} · `
+        : ""}
+      {relativeTime(updatedAt)}
+    </div>
+  );
+}
+
+/** «2 часа назад» — как в мете карточек прототипа. */
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} ${plural(min, "минуту", "минуты", "минут")} назад`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} ${plural(h, "час", "часа", "часов")} назад`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "вчера";
+  return `${d} ${plural(d, "день", "дня", "дней")} назад`;
+}
+
 function platformLabel(n: NodeOut): string | null {
   const platform = (n.data as { platform?: string }).platform;
   if (typeof platform === "string" && platform.length > 0) {
@@ -410,6 +470,23 @@ function platformLabel(n: NodeOut): string | null {
   return null;
 }
 
+/** Подписи типов нод под миниатюрой — как в прототипе (ЗАПИСЬ, ИДЕИ, …). */
+const NODE_LABEL: Record<NodeOut["type"], string> = {
+  source: "источник",
+  extract: "идеи",
+  llm: "ассистент",
+  format: "контент",
+};
+
+/**
+ * Миниатюра графа на карточке канваса — 1:1 по разметке прототипа
+ * (prime2-shell.jsx#CanvasThumb): viewBox по границам нод, кабели кривыми
+ * Безье, у каждой ноды три полосы-скелета и подпись типа под ней.
+ *
+ * Цвета не задаются здесь: обводка ноды берётся из классов `.tn.src/.ext/
+ * .llm/.post`, кабель из `.te`, подпись из `.tt2` — все в workspace.css,
+ * поэтому миниатюра следует теме сама.
+ */
 function ThumbMiniGraph({
   nodes,
   edges,
@@ -419,191 +496,85 @@ function ThumbMiniGraph({
 }) {
   if (nodes.length === 0) return <ThumbPlaceholder />;
 
-  // Compute bounding box.
+  // Ноды на канвасе примерно такого размера; точные ширины разных типов
+  // на миниатюре неразличимы.
+  const W = 320;
+  const H = 180;
+  const PAD = 34;
+  const LAB = 22;
+
   const xs = nodes.map((n) => n.position_x);
   const ys = nodes.map((n) => n.position_y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  // Source nodes are ~296px wide, others ~320-380; use a rough avg.
-  const NATIVE_W = 320;
-  const NATIVE_H = 180;
-  const bboxW = maxX - minX + NATIVE_W;
-  const bboxH = maxY - minY + NATIVE_H;
+  const x0 = Math.min(...xs) - PAD;
+  const y0 = Math.min(...ys) - PAD;
+  const x1 = Math.max(...xs) + W + PAD;
+  const y1 = Math.max(...ys) + H + PAD + LAB;
 
-  const padX = 14;
-  const padY = 14;
-  const scale = Math.min(
-    (THUMB_W - padX * 2) / bboxW,
-    (THUMB_H - padY * 2) / bboxH,
-  );
-  const offsetX =
-    (THUMB_W - bboxW * scale) / 2 - minX * scale;
-  const offsetY =
-    (THUMB_H - bboxH * scale) / 2 - minY * scale;
-
-  const positionsById = new Map<
-    string,
-    {
-      cx: number;
-      cy: number;
-      type: NodeOut["type"];
-      label: string | null;
-    }
-  >();
-  for (const n of nodes) {
-    const x = n.position_x * scale + offsetX + (NATIVE_W * scale) / 2;
-    const y = n.position_y * scale + offsetY + (NATIVE_H * scale) / 2;
-    positionsById.set(n.id, {
-      cx: x,
-      cy: y,
-      type: n.type,
-      label: platformLabel(n),
-    });
-  }
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const thumbClass: Record<NodeOut["type"], string> = {
+    source: "src",
+    extract: "ext",
+    llm: "llm",
+    format: "post",
+  };
 
   return (
-    <svg
-      viewBox={`0 0 ${THUMB_W} ${THUMB_H}`}
-      width="100%"
-      height="100%"
-      preserveAspectRatio="none"
-      style={{ position: "absolute", inset: 0 }}
-    >
-      {edges.map((e) => {
-        const a = positionsById.get(e.source_node_id);
-        const b = positionsById.get(e.target_node_id);
-        if (!a || !b) return null;
-        const dx = (b.cx - a.cx) / 2;
-        const path = `M ${a.cx} ${a.cy} C ${a.cx + dx} ${a.cy}, ${b.cx - dx} ${b.cy}, ${b.cx} ${b.cy}`;
-        return (
-          <path
-            key={e.id}
-            d={path}
-            stroke="rgba(255,255,255,0.22)"
-            strokeWidth="1"
-            fill="none"
-          />
-        );
-      })}
-      {Array.from(positionsById.entries()).map(([id, p]) => {
-        const stroke = NODE_STROKE[p.type];
-        const iconChar = NODE_ICON[p.type];
-        return (
-          <g key={id}>
-            <rect
-              x={p.cx - NODE_W / 2}
-              y={p.cy - NODE_H / 2}
-              width={NODE_W}
-              height={NODE_H}
-              rx={6}
-              fill="rgba(20,22,24,0.92)"
-              stroke={stroke}
-              strokeOpacity={0.75}
-              strokeWidth={0.8}
+    <div className="cvthumb">
+      <svg
+        viewBox={`${x0} ${y0} ${x1 - x0} ${y1 - y0}`}
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+      >
+        {edges.map((e) => {
+          const a = byId.get(e.source_node_id);
+          const b = byId.get(e.target_node_id);
+          if (!a || !b) return null;
+          const sx = a.position_x + W;
+          const sy = a.position_y + H / 2;
+          const ex = b.position_x;
+          const ey = b.position_y + H / 2;
+          const dx = Math.max(30, (ex - sx) * 0.55);
+          return (
+            <path
+              key={e.id}
+              className="te"
+              d={`M ${sx} ${sy} C ${sx + dx} ${sy}, ${ex - dx} ${ey}, ${ex} ${ey}`}
             />
-            <text
-              x={p.cx}
-              y={p.cy + 3}
-              textAnchor="middle"
-              fontSize={10}
-              fontWeight={600}
-              fill={stroke}
-              style={{ fontFamily: "system-ui, sans-serif" }}
-            >
-              {iconChar}
-            </text>
-            {p.label && (
-              <g>
-                <rect
-                  x={p.cx - NODE_W / 2}
-                  y={p.cy + NODE_H / 2 + 2}
-                  width={NODE_W}
-                  height={9}
-                  rx={2}
-                  fill="rgba(255,255,255,0.05)"
-                />
-                <text
-                  x={p.cx}
-                  y={p.cy + NODE_H / 2 + 9}
-                  textAnchor="middle"
-                  fontSize={7}
-                  fill="rgba(255,255,255,0.65)"
-                  style={{
-                    fontFamily: "system-ui, sans-serif",
-                    letterSpacing: 0.2,
-                  }}
-                >
-                  {p.label}
-                </text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+          );
+        })}
+        {nodes.map((n) => {
+          const x = n.position_x;
+          const y = n.position_y;
+          return (
+            <g key={n.id}>
+              <rect
+                className={`tn ${thumbClass[n.type]}`}
+                x={x}
+                y={y}
+                width={W}
+                height={H}
+                rx={12}
+              />
+              <rect className="tb" x={x + 12} y={y + 14} width={W * 0.48} height={7} rx={3.5} />
+              <rect className="tb" x={x + 12} y={y + 32} width={W - 24} height={6} rx={3} />
+              <rect className="tb" x={x + 12} y={y + 46} width={(W - 24) * 0.78} height={6} rx={3} />
+              <text className="tt2" x={x} y={y + H + 16}>
+                {platformLabel(n) ?? NODE_LABEL[n.type]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
-
-const NODE_STROKE: Record<NodeOut["type"], string> = {
-  source: "#60a5fa",
-  extract: "#facc15",
-  format: "#c084fc",
-};
-
-/**
- * Single-character glyph used as the type icon inside the mini-rect.
- * Picked to be readable at 10px and avoid emoji rendering quirks.
- *  ⌫ inbox-ish caret for Source, ✦ for Extract sparkle, ✎ for Format pen.
- */
-const NODE_ICON: Record<NodeOut["type"], string> = {
-  source: "▤",
-  extract: "✦",
-  format: "✎",
-};
 
 function ThumbPlaceholder() {
-  return (
-    <svg
-      viewBox={`0 0 ${THUMB_W} ${THUMB_H}`}
-      width="100%"
-      height="100%"
-      preserveAspectRatio="none"
-      style={{ position: "absolute", inset: 0 }}
-    >
-      <rect
-        x="20"
-        y="22"
-        width={THUMB_W - 40}
-        height={THUMB_H - 44}
-        rx="8"
-        fill="none"
-        stroke="rgba(255,255,255,0.10)"
-        strokeWidth="1"
-        strokeDasharray="4 5"
-      />
-      <text
-        x={THUMB_W / 2}
-        y={THUMB_H / 2 + 3}
-        textAnchor="middle"
-        fontSize={10}
-        fill="rgba(255,255,255,0.45)"
-        style={{ fontFamily: "system-ui, sans-serif" }}
-      >
-        Пусто
-      </text>
-    </svg>
-  );
+  // Пустая доска: та же поверхность и та же точечная сетка, что у миниатюры
+  // с графом, только без нод — карточки в сетке не «прыгают» по высоте.
+  return <div className="cvthumb" aria-hidden />;
 }
 
-/**
- * Keep canvas-detail prefetches batched at the dashboard level so each
- * card doesn't redeclare its own query. Uses TanStack `useQueries`.
- *
- * Reads the canvases list from the cache and fans out one detail fetch
- * per canvas + template. Cached 30s.
- */
 function useCanvasDetail(canvasId: string): CanvasDetail | undefined {
   // Single per-card useQuery via useQueries with a single key.
   // Using one entry keeps the API consistent and TanStack-pure.
@@ -628,7 +599,7 @@ function CanvasGridSkeleton({ small }: { small?: boolean } = {}) {
       {Array.from({ length: small ? 3 : 4 }).map((_, i) => (
         <div
           key={i}
-          className="rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden"
+          className="rounded-2xl border border-border/60 bg-foreground/[0.02] overflow-hidden"
           aria-hidden
         >
           <Skeleton className="h-[130px] w-full rounded-none" />

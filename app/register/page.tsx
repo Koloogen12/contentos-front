@@ -9,8 +9,12 @@ import { z } from "zod";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError, fetchMe, registerRequest } from "@/lib/api";
+import type { VerificationRequired } from "@/lib/api";
+import type { TokenPair } from "@/lib/types";
 import { decidePostAuthRoute } from "@/lib/post-auth-redirect";
 import { AuthCard } from "@/components/AuthCard";
+import { AuthDivider, YandexButton } from "@/components/auth/YandexButton";
+import { EmailCodeStep } from "@/components/auth/EmailCodeStep";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +48,10 @@ function RegisterForm() {
   const setHydrating = useAuthStore((s) => s.setHydrating);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
+  // Пока не null — показываем шаг подтверждения кодом. Аккаунт на бэкенде уже
+  // создан, но не активен: токены выдаются только после верного кода.
+  const [pending, setPending] = React.useState<VerificationRequired | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -58,10 +66,24 @@ function RegisterForm() {
     },
   });
 
+  const finishAuth = React.useCallback(
+    async (tokens: TokenPair) => {
+      setTokens({
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+      });
+      const me = await fetchMe();
+      setMe({ user: me.user, organization: me.organization });
+      setHydrating(false);
+      router.replace(await decidePostAuthRoute({ next }));
+    },
+    [next, router, setHydrating, setMe, setTokens],
+  );
+
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
     try {
-      const payload = {
+      const result = await registerRequest({
         email: values.email,
         password: values.password,
         ...(values.display_name?.trim()
@@ -70,17 +92,8 @@ function RegisterForm() {
         ...(values.organization_name?.trim()
           ? { organization_name: values.organization_name.trim() }
           : {}),
-      };
-      const tokens = await registerRequest(payload);
-      setTokens({
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
       });
-      const me = await fetchMe();
-      setMe({ user: me.user, organization: me.organization });
-      setHydrating(false);
-      const route = await decidePostAuthRoute({ next });
-      router.replace(route);
+      setPending(result);
     } catch (err) {
       if (err instanceof ApiError) {
         setServerError(
@@ -92,17 +105,46 @@ function RegisterForm() {
     }
   });
 
+  if (pending) {
+    return (
+      <AuthCard
+        title="Подтверди адрес"
+        subtitle="Остался один шаг — и воркспейс твой."
+        footer={
+          <>
+            Письма нет? Проверь папку со спамом или{" "}
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              className="font-medium text-foreground hover:text-primary"
+            >
+              вернись к форме
+            </button>
+            .
+          </>
+        }
+      >
+        <EmailCodeStep
+          email={pending.email}
+          codeDelivered={pending.code_delivered}
+          cooldownSeconds={pending.resend_cooldown_seconds}
+          ttlMinutes={pending.code_ttl_minutes}
+          onVerified={finishAuth}
+          onChangeEmail={() => setPending(null)}
+        />
+      </AuthCard>
+    );
+  }
+
   return (
     <AuthCard
       title="Создать воркспейс"
-      subtitle="Начни строить контент-пайплайны в THE CONTENT."
+      subtitle="Начни строить контент-пайплайны в THE DRAFT."
       footer={
         <>
           Уже есть аккаунт?{" "}
           <Link
-            href={
-              next ? `/login?next=${encodeURIComponent(next)}` : "/login"
-            }
+            href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
             className="font-medium text-foreground hover:text-primary"
           >
             Войти
@@ -110,7 +152,11 @@ function RegisterForm() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-5">
+      <div className="space-y-5">
+        <YandexButton next={next} label="Продолжить с Яндексом" />
+        <AuthDivider text="или по почте" />
+      </div>
+      <form onSubmit={onSubmit} className="mt-5 space-y-5">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -143,10 +189,7 @@ function RegisterForm() {
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="display_name">
-              Имя{" "}
-              <span className="text-muted-foreground">(необязательно)</span>
-            </Label>
+            <Label htmlFor="display_name">Имя</Label>
             <Input
               id="display_name"
               autoComplete="name"
@@ -155,10 +198,7 @@ function RegisterForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="organization_name">
-              Организация{" "}
-              <span className="text-muted-foreground">(необязательно)</span>
-            </Label>
+            <Label htmlFor="organization_name">Организация</Label>
             <Input
               id="organization_name"
               autoComplete="organization"

@@ -1,15 +1,20 @@
 import { apiFetch } from "@/lib/api";
 import type {
+  TelegramImportRequest,
+  UrlImportRequest,
+  VoiceImportResult,
   VoiceSampleBulkResult,
   VoiceSampleCreate,
   VoiceSampleOut,
   VoiceTraitsExtracted,
+  YoutubeImportRequest,
 } from "@/lib/types";
 
 /**
  * Voice training service module.
- * Mirrors `POST/GET/DELETE /api/v1/voice-samples` and the
- * `extract-traits` endpoint that bumps BrandContext.
+ * Wraps `/api/v1/voice-samples` — list/create/delete + extract-traits +
+ * three auto-import endpoints (Telegram public channel, YouTube channel,
+ * blog URLs).
  */
 
 export async function listVoiceSamples(): Promise<VoiceSampleOut[]> {
@@ -47,4 +52,35 @@ export async function extractTraits(): Promise<VoiceTraitsExtracted> {
       method: "POST",
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-import (free-tier sources)
+// ---------------------------------------------------------------------------
+
+export async function importVoiceFromTelegram(
+  input: TelegramImportRequest,
+): Promise<VoiceImportResult> {
+  return apiFetch<VoiceImportResult>("/api/v1/voice-samples/import/telegram", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function importVoiceFromYoutube(
+  input: YoutubeImportRequest,
+): Promise<VoiceImportResult> {
+  return apiFetch<VoiceImportResult>("/api/v1/voice-samples/import/youtube", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function importVoiceFromUrls(
+  input: UrlImportRequest,
+): Promise<VoiceImportResult> {
+  return apiFetch<VoiceImportResult>("/api/v1/voice-samples/import/url", {
+    method: "POST",
+    body: input,
+  });
 }

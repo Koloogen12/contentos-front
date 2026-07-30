@@ -137,7 +137,7 @@ export function VersionsDialog({
         <div className="co-vh-list">
           <div>
             {creating ? (
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col gap-2">
+              <div className="rounded-xl border border-border bg-foreground/[0.03] p-3 flex flex-col gap-2">
                 <label className="co-field-label">
                   {t.versions.snapshotLabel}
                 </label>
@@ -210,7 +210,7 @@ export function VersionsDialog({
           {!versionsQuery.isPending &&
             !versionsQuery.isError &&
             versions.length === 0 && (
-              <div className="rounded-md border border-dashed border-white/10 bg-white/[0.02] p-4 text-center text-[12px] text-[color:var(--text-tertiary)] leading-relaxed">
+              <div className="rounded-md border border-dashed border-border bg-foreground/[0.02] p-4 text-center text-[12px] text-[color:var(--text-tertiary)] leading-relaxed">
                 {t.versions.empty}
               </div>
             )}
@@ -345,10 +345,10 @@ function VersionRow({
               className="fixed inset-0 z-50"
               onClick={() => setMenuOpen(false)}
             />
-            <div className="absolute left-0 top-9 z-50 w-40 rounded-lg border border-white/10 bg-[#1A1C1E] p-1 shadow-xl">
+            <div className="absolute left-0 top-9 z-50 w-40 rounded-lg border border-border bg-popover p-1 shadow-xl">
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-[#fca5a5] hover:bg-white/5"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-[#fca5a5] hover:bg-foreground/5"
                 onClick={() => {
                   setMenuOpen(false);
                   onDelete();

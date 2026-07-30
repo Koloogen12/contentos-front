@@ -1,6 +1,6 @@
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { Wordmark } from "@/components/Wordmark";
 
 interface AuthCardProps {
   title: string;
@@ -22,10 +22,7 @@ export function AuthCard({
           href="/"
           className="mb-10 flex items-center justify-center gap-2 text-foreground"
         >
-          <Sparkles className="h-6 w-6 text-primary" />
-          <span className="text-lg font-bold tracking-[0.04em]">
-            THE CONTENT
-          </span>
+          <Wordmark size="lg" />
         </Link>
         <div className="rounded-2xl border border-border bg-card p-8 shadow-2xl">
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>

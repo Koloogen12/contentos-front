@@ -26,12 +26,13 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Zap } from "lucide-react";
+import { FileAudio, Loader2, Zap } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
 import { getCanvas as fetchCanvas, runAllOnCanvas } from "@/lib/canvases";
 import { createNode, deleteNode, updateNode } from "@/lib/nodes";
 import { createEdge, deleteEdge } from "@/lib/edges";
+import { uploadAudio } from "@/lib/transcription";
 import {
   getSkillRun,
   runNode as runNodeApi,
@@ -42,10 +43,12 @@ import type {
   EdgeOut,
   ExtractNodeData,
   FormatNodeData,
+  FormatPlatform,
   NodeOut,
   NodeStatus,
   NodeType,
   SourceInputType,
+  TalkingPoint,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +66,7 @@ import { NodePicker, type NodePickerItem, type NodePickerMode } from "./NodePick
 import { ExtractNode } from "./nodes/ExtractNode";
 import { FormatNode } from "./nodes/FormatNode";
 import { SourceNode } from "./nodes/SourceNode";
+import { LLMNode } from "./nodes/LLMNode";
 import { TweaksPanel } from "./TweaksPanel";
 import {
   type AnyClientObject,
@@ -89,6 +93,7 @@ const NODE_TYPES: NodeTypes = {
   source: SourceNode,
   extract: ExtractNode,
   format: FormatNode,
+  llm: LLMNode,
   "co-note": NoteNode,
   "co-comment": CommentNode,
   "co-text": TextNode,
@@ -99,9 +104,12 @@ interface RfNodeData extends Record<string, unknown> {
 }
 
 const VALID_EDGE_TYPES: Record<NodeType, NodeType[]> = {
-  source: ["extract", "format"],
-  extract: ["format"],
-  format: [],
+  // Any content node can be wired INTO an llm node as chat context.
+  source: ["extract", "format", "llm"],
+  extract: ["format", "llm"],
+  format: ["llm"],
+  // An llm node's output (last reply) can feed extract/format/another llm.
+  llm: ["extract", "format", "llm"],
 };
 
 function isValidConnectionTypes(source: NodeType, target: NodeType): boolean {
@@ -114,6 +122,7 @@ const MINI_TYPE_ABBR: Record<string, string> = {
   source: "SRC",
   extract: "EXT",
   format: "FMT",
+  llm: "LLM",
 };
 
 export function CanvasEditor(props: CanvasEditorProps) {
@@ -143,6 +152,14 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
   const [picker, setPicker] = React.useState<{
     mode: NodePickerMode;
     flowPosition?: { x: number; y: number };
+    /**
+     * When set, the picker was opened by dragging a handle off into empty
+     * space. The chosen node will be created at `flowPosition` AND an edge
+     * `source → newNode` will be created automatically. Lets the user wire
+     * "I want a Telegram post from this extract" in a single drag instead
+     * of double-click-new-node + drag-handle-to-handle.
+     */
+    connectFromNodeId?: string;
   } | null>(null);
 
   // ---- Tweaks panel collapse state ----
@@ -469,6 +486,69 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [createEdgeMutation, getNodeSnapshot],
   );
 
+  /**
+   * Drag-from-handle → drop-on-empty-pane → picker.
+   *
+   * React Flow fires `onConnectStart` when the user grabs a handle and
+   * begins a potential connection. `onConnectEnd` fires when they release;
+   * if the release landed on a valid handle, `onConnect` runs instead and
+   * this path is no-op. If they released over empty space, we open the
+   * NodePicker at the drop position with `connectFromNodeId` set — the
+   * picker will then both create the new node AND wire the edge in one
+   * flow. Same UX as Figma/Miro "drag from arrow → pick what to drop".
+   */
+  const connectFromNodeIdRef = React.useRef<string | null>(null);
+
+  const onConnectStart = React.useCallback(
+    (_event: unknown, params: { nodeId?: string | null }) => {
+      connectFromNodeIdRef.current = params.nodeId ?? null;
+    },
+    [],
+  );
+
+  const onConnectEnd = React.useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      const sourceId = connectFromNodeIdRef.current;
+      connectFromNodeIdRef.current = null;
+      if (!sourceId) return;
+      // If the release landed on a real handle / node, onConnect already
+      // fired — skip the picker. RF v12 exposes this through the event
+      // target's class list (handle class is `react-flow__handle`).
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".react-flow__handle")) return;
+      // Block when source is a format node — format → anything is invalid.
+      const src = getNodeSnapshot(sourceId);
+      if (!src) return;
+      const validTargets = VALID_EDGE_TYPES[src.type];
+      if (!validTargets || validTargets.length === 0) {
+        toast.error(
+          `От ноды «${src.type}» нельзя протянуть связь дальше.`,
+        );
+        return;
+      }
+      // Position the picker at the drop location, plus compute the flow-
+      // coordinate equivalent so the new node spawns under the cursor.
+      const clientX =
+        "clientX" in event
+          ? event.clientX
+          : event.touches?.[0]?.clientX ?? 0;
+      const clientY =
+        "clientY" in event
+          ? event.clientY
+          : event.touches?.[0]?.clientY ?? 0;
+      const flowPos = reactFlow.screenToFlowPosition({
+        x: clientX,
+        y: clientY,
+      });
+      setPicker({
+        mode: { kind: "at-point", x: clientX, y: clientY },
+        flowPosition: flowPos,
+        connectFromNodeId: sourceId,
+      });
+    },
+    [getNodeSnapshot, reactFlow],
+  );
+
   const onEdgesDelete = React.useCallback((edges: RfEdge[]) => {
     for (const e of edges) {
       if (e.id.startsWith("optimistic-")) continue;
@@ -564,13 +644,135 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       ),
   });
 
+  // ----- Drag & drop files onto the canvas -----
+  // State + ref live here; the drop handler itself is defined lower, after
+  // `attachSkillRun` exists (it's a dependency).
+  const [isDraggingFiles, setIsDraggingFiles] = React.useState(false);
+  const dragDepthRef = React.useRef(0);
+
+  /**
+   * Multi-fanout: spawn a fresh format node anchored to a specific
+   * talking-point card on the upstream extract.
+   *
+   * Why this exists separately from the regular picker flow: the picker
+   * creates a free-floating node and lets the user wire it up themselves.
+   * Multi-fanout creates BOTH the format node AND the edge atomically and
+   * stamps `{tezis_index}` on the edge — so the worker resolves the right
+   * tezis even when the parent extract's `selected_index` is set to
+   * something else (multiple format nodes can fan out from the same
+   * extract, each consuming a different tezis).
+   *
+   * Backward compat: we also stamp `source_talking_point_index` on the
+   * format node's `data` so the existing `FormatNode` UI renders the
+   * correct "Из тезиса:" picker. The legacy `selected_index`-patching
+   * kludge in FormatNode keeps running but is now no-op (backend prefers
+   * the edge.data.tezis_index regardless).
+   */
+  const spawnFormatFromTezis = React.useCallback(
+    async (extractNodeId: string, tezisIndex: number, platform: FormatPlatform) => {
+      const extract = getNodeSnapshot(extractNodeId);
+      if (!extract || extract.type !== "extract") {
+        toast.error("Не удалось найти extract-ноду");
+        return;
+      }
+      const extractData = (extract.data ?? {}) as ExtractNodeData;
+      const mode = extractData.extract_mode ?? "talking_points";
+
+      // Resolve source text + optional preset hook based on extract mode.
+      //   talking_points: pull from `talking_points[tezisIndex].text`.
+      //   summary:        the summary IS the talking point; index ignored.
+      //   story_arc:      pull from `scenes[tezisIndex]` (also gets a
+      //                   hook + platform preset that we seed into the
+      //                   new format node so the user doesn't have to
+      //                   re-type the AI's planned opener).
+      let talkingPointText = "";
+      let presetHook: string | undefined;
+      let resolvedPlatform: FormatPlatform = platform;
+      let sourceLabel = `тезиса ${tezisIndex + 1}`;
+
+      if (mode === "story_arc") {
+        const scene = (extractData.scenes ?? [])[tezisIndex];
+        if (!scene) {
+          toast.error("Сцена арки не найдена");
+          return;
+        }
+        talkingPointText = scene.talking_point;
+        presetHook = scene.hook;
+        // Caller passed platform but story_arc scene has its own preferred
+        // platform — if caller didn't override, use the scene's.
+        resolvedPlatform = platform ?? scene.platform;
+        sourceLabel = `сцены ${scene.order} (${scene.stage})`;
+      } else if (mode === "summary") {
+        talkingPointText = (extractData.summary ?? "").slice(0, 4000);
+        sourceLabel = "саммари";
+      } else {
+        const tps: TalkingPoint[] = extractData.talking_points ?? [];
+        const tp = tps[tezisIndex];
+        if (!tp) {
+          toast.error("Тезис не найден");
+          return;
+        }
+        talkingPointText = tp.text;
+      }
+
+      // Position the new format to the right of the extract, fanning down
+      // by the count of existing outgoing edges so successive spawns stack
+      // vertically rather than overlap.
+      const fanIndex = rfEdges.filter(
+        (e) => e.source === extractNodeId,
+      ).length;
+      const x = extract.position_x + 480;
+      const y = extract.position_y + fanIndex * 80;
+
+      try {
+        const created = await createNode(canvasId, {
+          type: "format",
+          position_x: x,
+          position_y: y,
+          data: {
+            platform: resolvedPlatform,
+            // Seed hooks[] with the planned hook so the user sees it in
+            // the format node before running the skill. The skill will
+            // overwrite with 3 variants on run — that's expected.
+            hooks: presetHook ? [presetHook] : [],
+            selected_hook_index: 0,
+            body: "",
+            cta: "",
+            full_text: "",
+            talking_point_text: talkingPointText,
+            source_talking_point_index: tezisIndex,
+          },
+        });
+        setRfNodes((prev) => [...prev, buildRfNode(created)]);
+
+        const edge = await createEdge(canvasId, {
+          source_node_id: extractNodeId,
+          target_node_id: created.id,
+          data: { tezis_index: tezisIndex },
+        });
+        setRfEdges((prev) => [...prev, buildRfEdge(edge, new Set())]);
+
+        qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+        setSelectedNodeId(created.id);
+
+        toast.success(`Создан пост из ${sourceLabel} (${resolvedPlatform})`);
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.detail : "Не удалось создать пост",
+        );
+      }
+    },
+    [canvasId, getNodeSnapshot, rfEdges, buildRfNode, buildRfEdge, qc],
+  );
+
   const handlePickerPick = React.useCallback(
-    (item: NodePickerItem) => {
+    async (item: NodePickerItem) => {
       const flowPos = picker?.flowPosition;
+      const connectFromId = picker?.connectFromNodeId;
       let x: number;
       let y: number;
       if (flowPos) {
-        // Spawned at click position from double-click.
+        // Spawned at click / drop position from double-click or handle-drag.
         x = flowPos.x - 160;
         y = flowPos.y - 60;
       } else {
@@ -587,15 +789,72 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         x = baseX - 160 + offset;
         y = baseY - 60 + offset;
       }
-      createNodeMutation.mutate({
-        type: item.type,
-        x,
-        y,
-        presetType: item.presetType,
-      });
+
+      // Validate edge type before doing anything destructive (when this
+      // pick came from a handle-drag flow).
+      if (connectFromId) {
+        const src = getNodeSnapshot(connectFromId);
+        if (src && !isValidConnectionTypes(src.type, item.type)) {
+          toast.error(
+            `Недопустимое соединение: ${src.type} → ${item.type}`,
+          );
+          setPicker(null);
+          return;
+        }
+      }
+
       setPicker(null);
+
+      // Without auto-wire — same path as before.
+      if (!connectFromId) {
+        createNodeMutation.mutate({
+          type: item.type,
+          x,
+          y,
+          presetType: item.presetType,
+        });
+        return;
+      }
+
+      // With auto-wire: create node THEN edge in sequence. We use the
+      // promise form rather than the mutation .mutate() so we can chain
+      // the edge creation onto the new node's id.
+      try {
+        const created = await createNode(canvasId, {
+          type: item.type,
+          position_x: x,
+          position_y: y,
+          data: defaultDataForType(item.type, item.presetType),
+        });
+        setRfNodes((prev) => [...prev, buildRfNode(created)]);
+
+        const edge = await createEdge(canvasId, {
+          source_node_id: connectFromId,
+          target_node_id: created.id,
+        });
+        setRfEdges((prev) => [...prev, buildRfEdge(edge, new Set())]);
+
+        qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+        setSelectedNodeId(created.id);
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError
+            ? err.detail
+            : "Не удалось создать ноду со связью",
+        );
+      }
     },
-    [createNodeMutation, picker, reactFlow, rfNodes.length],
+    [
+      createNodeMutation,
+      picker,
+      reactFlow,
+      rfNodes.length,
+      canvasId,
+      buildRfNode,
+      buildRfEdge,
+      qc,
+      getNodeSnapshot,
+    ],
   );
 
   // ----- Update node data -----
@@ -660,6 +919,12 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               ["canvas", canvasId],
               fresh,
             );
+            // Invalidate /auth/me so the trial badge picks up freshly-
+            // incremented counters (used / renders). Backend bumped them
+            // synchronously when this skill-run was enqueued; without
+            // this nudge TrialBadge's 30s poll could miss the change
+            // long enough for the auto-pop modal to feel buggy.
+            void qc.invalidateQueries({ queryKey: ["auth", "me"] });
             toast.success(successMessage);
           } catch (err) {
             toast.error(
@@ -720,6 +985,84 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       attachSubscription(nodeId, skillRunId, t.canvas.transcriptionDone);
     },
     [attachSubscription],
+  );
+
+  // Drop handler for files dragged onto the canvas surface. Audio/video →
+  // file-source node + transcription; text/markdown → text-source node with
+  // the file's content. Defined here (not with its state above) because it
+  // depends on `attachSkillRun`, declared just above.
+  const handleFilesDrop = React.useCallback(
+    async (files: File[], clientX: number, clientY: number) => {
+      if (files.length === 0) return;
+      let base: { x: number; y: number };
+      try {
+        base = reactFlow.screenToFlowPosition({ x: clientX, y: clientY });
+      } catch {
+        base = { x: 0, y: 0 };
+      }
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // Stack multiple dropped files so they don't overlap.
+        const x = base.x - 148 + i * 40;
+        const y = base.y - 40 + i * 40;
+        const mime = file.type || "";
+        const name = file.name.toLowerCase();
+        const isAV =
+          mime.startsWith("audio/") ||
+          mime.startsWith("video/") ||
+          /\.(mp3|mp4|m4a|wav|ogg|webm|mov|aac|flac)$/.test(name);
+        const isText =
+          mime.startsWith("text/") || /\.(txt|md|markdown|srt|vtt)$/.test(name);
+
+        try {
+          if (isAV) {
+            const created = await createNode(canvasId, {
+              type: "source",
+              position_x: x,
+              position_y: y,
+              data: {
+                input_type: "file_upload",
+                file_name: file.name,
+                file_size_bytes: file.size,
+                file_type: mime,
+                content: "",
+              },
+            });
+            setRfNodes((prev) => [...prev, buildRfNode(created)]);
+            qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+            const { skill_run_id } = await uploadAudio(created.id, file);
+            attachSkillRun(created.id, skill_run_id);
+            toast.success(`Файл «${file.name}» — транскрибирую…`);
+          } else if (isText) {
+            const text = await file.text();
+            const created = await createNode(canvasId, {
+              type: "source",
+              position_x: x,
+              position_y: y,
+              data: {
+                input_type: "text",
+                content: text.slice(0, 100_000),
+              },
+            });
+            setRfNodes((prev) => [...prev, buildRfNode(created)]);
+            qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+            toast.success(`Текст из «${file.name}» добавлен`);
+          } else {
+            toast.error(
+              `«${file.name}»: поддерживаются только аудио/видео и текстовые файлы`,
+            );
+          }
+        } catch (err) {
+          toast.error(
+            err instanceof ApiError
+              ? err.detail
+              : `Не удалось добавить «${file.name}»`,
+          );
+        }
+      }
+    },
+    [reactFlow, canvasId, buildRfNode, attachSkillRun, qc],
   );
 
   // ----- Run all -----
@@ -989,6 +1332,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getNode: getNodeSnapshot,
       getCanvas,
       isRunning,
+      spawnFormatFromTezis,
     }),
     [
       updateNodeData,
@@ -998,6 +1342,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getNodeSnapshot,
       getCanvas,
       isRunning,
+      spawnFormatFromTezis,
     ],
   );
 
@@ -1058,7 +1403,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         y: spawnAt.y - halfH,
         text: defaultText,
         ...(kind === "note"
-          ? { w: 200, h: 160, color: "#FFE082" }
+          ? { w: 200, h: 160, color: "var(--p-amber)" }
           : kind === "comment"
             ? { w: 240 }
             : {}),
@@ -1278,8 +1623,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             : type === "format"
               ? "#c084fc"
               : type === "co-note"
-                ? "#FFE082"
-                : "rgba(255,255,255,0.45)";
+                ? "var(--p-amber)"
+                : "rgb(var(--ink-rgb) / 0.45)";
       const minW = 28;
       const minH = 18;
       const w = Math.max(props.width, minW);
@@ -1294,7 +1639,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             width={w}
             height={h}
             rx={6}
-            fill="rgba(20,22,24,0.92)"
+            fill="rgb(var(--card-rgb) / 0.92)"
             stroke={stroke}
             strokeWidth={1.4}
             shapeRendering={props.shapeRendering}
@@ -1328,7 +1673,42 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         className="relative flex-1 co-canvas-surface"
         style={{ cursor: surfaceCursor }}
         onPointerUp={onWrapperPointerUp}
+        onDragEnter={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          e.preventDefault();
+          dragDepthRef.current += 1;
+          setIsDraggingFiles(true);
+        }}
+        onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDragLeave={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          dragDepthRef.current -= 1;
+          if (dragDepthRef.current <= 0) {
+            dragDepthRef.current = 0;
+            setIsDraggingFiles(false);
+          }
+        }}
+        onDrop={(e) => {
+          const files = Array.from(e.dataTransfer.files ?? []);
+          if (files.length === 0) return;
+          e.preventDefault();
+          dragDepthRef.current = 0;
+          setIsDraggingFiles(false);
+          void handleFilesDrop(files, e.clientX, e.clientY);
+        }}
       >
+        {isDraggingFiles && (
+          <div className="co-canvas-dropzone">
+            <div className="co-canvas-dropzone-label">
+              <FileAudio size={15} />
+              Отпусти файл — создам источник и транскрибирую
+            </div>
+          </div>
+        )}
         {pipelineRunning && (
           <div className="co-run-badge">
             <Loader2 size={14} className="animate-spin" />
@@ -1351,8 +1731,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
               : t.canvas.runAll
           }
           className={cn(
-            "absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-xs font-medium text-white backdrop-blur",
-            "hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50",
+            "absolute right-4 top-4 z-30 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground backdrop-blur",
+            "hover:bg-card disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >
           {runAllMutation.isPending || sequentialRunning ? (
@@ -1370,6 +1750,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           onNodesChange={onNodesChange as (changes: NodeChange[]) => void}
           onEdgesChange={onEdgesChange as (changes: EdgeChange[]) => void}
           onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onNodeDragStop={onNodeDragStop}
           onEdgesDelete={onEdgesDelete}
           onPaneClick={onPaneClick}
@@ -1391,7 +1773,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             variant={BackgroundVariant.Dots}
             gap={11}
             size={0.75}
-            color="rgba(255,255,255,0.1)"
+            color="rgb(var(--ink-rgb) / 0.1)"
           />
           {/* B2: MiniMap with custom nodeComponent — each minimap node
               looks like a miniature of the real card (rounded outline,
@@ -1407,8 +1789,8 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
             nodeBorderRadius={6}
             nodeComponent={MiniMapNode}
             style={{
-              background: "rgba(20,22,24,0.92)",
-              border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgb(var(--card-rgb) / 0.92)",
+              border: "1px solid rgb(var(--ink-rgb) / 0.08)",
               borderRadius: 8,
             }}
           />
@@ -1450,7 +1832,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
           <button
             type="button"
             onClick={reopenTweaks}
-            className="absolute bottom-[200px] right-4 z-20 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[11px] font-medium text-zinc-200 backdrop-blur hover:bg-black/80"
+            className="absolute bottom-[200px] right-4 z-20 rounded-full border border-border bg-card/90 px-3 py-1.5 text-[11px] font-medium text-foreground backdrop-blur hover:bg-card"
             title="Открыть Tweaks"
           >
             Tweaks
@@ -1460,6 +1842,17 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
         {picker && (
           <NodePicker
             mode={picker.mode}
+            // When opened via a handle-drag, restrict the list to valid
+            // downstream types (e.g. you can't drop a source after an
+            // extract). Otherwise show everything (toolbar + dblclick).
+            allowedTypes={
+              picker.connectFromNodeId
+                ? (() => {
+                    const src = getNodeSnapshot(picker.connectFromNodeId);
+                    return src ? VALID_EDGE_TYPES[src.type] : undefined;
+                  })()
+                : undefined
+            }
             onPick={handlePickerPick}
             onClose={() => setPicker(null)}
           />
@@ -1530,6 +1923,9 @@ function defaultDataForType(
       full_text: "",
       talking_point_text: "",
     };
+  }
+  if (type === "llm") {
+    return { messages: [] };
   }
   return {};
 }

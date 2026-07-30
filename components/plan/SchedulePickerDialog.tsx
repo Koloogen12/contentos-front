@@ -177,7 +177,7 @@ export function SchedulePickerDialog({
                     ),
                   )
                 }
-                className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:bg-white/5 hover:text-foreground"
+                className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:bg-foreground/5 hover:text-foreground"
                 aria-label="Previous month"
               >
                 <ChevronLeft size={16} />
@@ -196,7 +196,7 @@ export function SchedulePickerDialog({
                     ),
                   )
                 }
-                className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:bg-white/5 hover:text-foreground"
+                className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:bg-foreground/5 hover:text-foreground"
                 aria-label="Next month"
               >
                 <ChevronRight size={16} />

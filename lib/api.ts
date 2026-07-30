@@ -165,21 +165,97 @@ export async function loginRequest(input: { email: string; password: string }) {
   });
 }
 
+/**
+ * Ответ на регистрацию. Токенов здесь нет намеренно: аккаунт не работает,
+ * пока адрес не подтверждён кодом из письма.
+ *
+ * `code_delivered: false` — на сервере не настроен SMTP, код ушёл в лог.
+ * Показываем это прямо, а не отправляем человека проверять почту, куда
+ * ничего не отправляли.
+ */
+export interface VerificationRequired {
+  email: string;
+  verification_required: boolean;
+  code_delivered: boolean;
+  resend_cooldown_seconds: number;
+  code_ttl_minutes: number;
+}
+
 export async function registerRequest(input: {
   email: string;
   password: string;
   display_name?: string;
   organization_name?: string;
 }) {
-  return apiFetch<TokenPair>("/api/v1/auth/register", {
+  return apiFetch<VerificationRequired>("/api/v1/auth/register", {
     method: "POST",
     body: input,
     skipAuth: true,
   });
 }
 
+export async function verifyEmailRequest(input: { email: string; code: string }) {
+  return apiFetch<TokenPair>("/api/v1/auth/verify-email", {
+    method: "POST",
+    body: input,
+    skipAuth: true,
+  });
+}
+
+export async function resendCodeRequest(input: { email: string }) {
+  return apiFetch<VerificationRequired>("/api/v1/auth/resend-code", {
+    method: "POST",
+    body: input,
+    skipAuth: true,
+  });
+}
+
+/** Маркер, которым /auth/login отвечает на неподтверждённый адрес. */
+export const EMAIL_NOT_VERIFIED = "email_not_verified";
+
+/**
+ * Ссылка на вход через Яндекс. Это переход браузера, а не fetch: OAuth
+ * требует полноценного редиректа на сторону провайдера.
+ */
+export function yandexStartUrl(next?: string | null) {
+  const base = `${API_BASE_URL}/api/v1/auth/yandex/start`;
+  return next ? `${base}?redirect_after=${encodeURIComponent(next)}` : base;
+}
+
 export async function fetchMe() {
   return apiFetch<MeResponse>("/api/v1/auth/me");
+}
+
+/** Server-side response of `POST /auth/preview-session`. */
+export interface PreviewSessionResponse {
+  access_token: string;
+  refresh_token: string;
+  preview_ai_runs_left: number;
+  preview_renders_left: number;
+}
+
+/** Provision an anonymous preview org. No timer, hard-capped to
+ *  1 canvas / 3 AI ops / 1 render. The first Format-node completion
+ *  triggers a MANDATORY register modal (cannot dismiss). */
+export async function startPreviewSession(): Promise<PreviewSessionResponse> {
+  return apiFetch<PreviewSessionResponse>("/api/v1/auth/preview-session", {
+    method: "POST",
+    skipAuth: true,
+  });
+}
+
+/** Convert preview org → registered trial. Preserves all data. The
+ *  24-hour trial countdown starts NOW (server-side). Returns fresh
+ *  JWT tokens. */
+export async function registerFromPreview(input: {
+  email: string;
+  password: string;
+  display_name?: string;
+}) {
+  return apiFetch<TokenPair>("/api/v1/auth/register-preview", {
+    method: "POST",
+    body: input,
+  });
 }
 
 /**

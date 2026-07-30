@@ -7,17 +7,17 @@ import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
 const STATUS_BORDER: Record<NodeStatus, string> = {
-  idle: "border-[#2a2d33]",
-  running: "border-indigo-500/80 shadow-[0_0_0_3px_rgba(99,102,241,0.18)]",
-  done: "border-emerald-500/70",
-  error: "border-red-500/80",
+  idle: "border-[color:var(--node-border)]",
+  running: "border-content/80 shadow-[0_0_0_3px_rgba(99,102,241,0.18)]",
+  done: "border-success/70",
+  error: "border-destructive/80",
 };
 
 const STATUS_DOT: Record<NodeStatus, string> = {
-  idle: "bg-zinc-500",
-  running: "bg-indigo-400 animate-pulse",
-  done: "bg-emerald-400",
-  error: "bg-red-400",
+  idle: "bg-muted",
+  running: "bg-content animate-pulse",
+  done: "bg-success",
+  error: "bg-destructive",
 };
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
@@ -53,27 +53,27 @@ export function NodeShell({
   return (
     <div
       className={cn(
-        "w-[320px] rounded-xl border-2 bg-[#1C1E20] text-foreground shadow-lg transition-all",
+        "w-[320px] rounded-xl border-2 bg-[color:var(--node-bg)] text-foreground shadow-lg transition-all",
         STATUS_BORDER[status],
         selected && "ring-2 ring-primary/40 ring-offset-1 ring-offset-[#000]",
       )}
     >
-      <div className="flex items-start justify-between gap-2 border-b border-white/5 px-3 py-2.5">
+      <div className="flex items-start justify-between gap-2 border-b border-border/60 px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
               className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[status])}
               aria-hidden
             />
-            <span className="line-clamp-1 text-xs font-semibold uppercase tracking-wider text-zinc-300">
+            <span className="line-clamp-1 text-xs font-semibold uppercase tracking-wider text-foreground/80">
               {title}
             </span>
-            <span className="ml-auto text-[10px] uppercase tracking-wide text-zinc-500">
+            <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
               {STATUS_LABEL[status]}
             </span>
           </div>
           {subhead && (
-            <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">
+            <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
               {subhead}
             </div>
           )}
@@ -82,7 +82,7 @@ export function NodeShell({
           {headerActions}
           <button
             type="button"
-            className="nodrag rounded-md p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+            className="nodrag rounded-md p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
             onClick={(e) => {
               e.stopPropagation();
               onToggleExpanded();

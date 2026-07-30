@@ -3,6 +3,7 @@
 import * as React from "react";
 import type {
   CanvasDetail,
+  FormatPlatform,
   NodeOut,
   NodeStatus,
   ExtractNodeData,
@@ -40,6 +41,20 @@ export interface CanvasNodeContextValue {
   getCanvas: () => CanvasDetail | undefined;
   /** Returns true while a skill-run for this node is in flight. */
   isRunning: (nodeId: string) => boolean;
+  /**
+   * Spawn a fresh format node attached to a specific talking-point card on
+   * an extract node. Creates both the node (with platform pre-set, body
+   * fields blank) and the edge that carries `{tezis_index}` so the worker
+   * picks the right tezis even if the extract's `selected_index` later
+   * changes or other format nodes consume different tezisy. Returns void;
+   * the canvas auto-refreshes via the same query lifecycle as manual node
+   * creation.
+   */
+  spawnFormatFromTezis: (
+    extractNodeId: string,
+    tezisIndex: number,
+    platform: FormatPlatform,
+  ) => Promise<void>;
   /**
    * When true, the node renders in a non-interactive read-only flavor:
    * no Run / Publish / autosave / mutating UI. Used by the public viewer.

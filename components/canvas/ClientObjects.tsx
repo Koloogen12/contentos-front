@@ -120,7 +120,7 @@ export function NoteNode({ data, selected }: NodeProps) {
       style={{
         width: obj.w ?? 200,
         minHeight: obj.h ?? 160,
-        background: obj.color ?? "#FFE082",
+        background: obj.color ?? "var(--p-amber)",
         borderRadius: 8,
         padding: 12,
         boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
@@ -228,8 +228,8 @@ export function CommentNode({ data, selected }: NodeProps) {
     <div
       style={{
         width: 240,
-        background: "rgba(20,22,24,0.95)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgb(var(--card-rgb) / 0.95)",
+        border: "1px solid rgb(var(--ink-rgb) / 0.1)",
         borderRadius: 12,
         boxShadow: "0 12px 32px rgba(0,0,0,0.6)",
         outline: selected ? "2px solid rgba(99,102,241,0.7)" : "none",
@@ -256,7 +256,7 @@ export function CommentNode({ data, selected }: NodeProps) {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "8px 10px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid rgb(var(--ink-rgb) / 0.06)",
           fontSize: 11,
           fontWeight: 600,
           color: "var(--text-secondary)",
@@ -297,8 +297,8 @@ export function CommentNode({ data, selected }: NodeProps) {
             style={{
               width: "100%",
               minHeight: 60,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "rgb(var(--ink-rgb) / 0.04)",
+              border: "1px solid rgb(var(--ink-rgb) / 0.06)",
               borderRadius: 6,
               padding: 6,
               color: "var(--text-primary)",

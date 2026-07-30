@@ -215,7 +215,7 @@ export function MonthlyCalendar({
               key={c.iso}
               onClick={() => onDayClick(c.iso, posts)}
               className={cn(
-                "flex min-h-[80px] flex-col gap-1 px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-white/[0.03]",
+                "flex min-h-[80px] flex-col gap-1 px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-foreground/[0.03]",
                 c.inMonth ? "bg-background/60" : "bg-background/30",
                 isToday && "ring-1 ring-primary",
               )}
@@ -246,7 +246,7 @@ export function MonthlyCalendar({
                     />
                   ))}
                   {overflow > 0 && (
-                    <span className="rounded-full bg-white/5 px-1 py-0.5 text-[9px] tabular-nums text-[color:var(--text-muted)]">
+                    <span className="rounded-full bg-foreground/5 px-1 py-0.5 text-[9px] tabular-nums text-[color:var(--text-muted)]">
                       +{overflow}
                     </span>
                   )}

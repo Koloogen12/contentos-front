@@ -191,7 +191,7 @@ function PublicCanvasInner({
       target: e.target_node_id,
       type: "default",
       animated: false,
-      style: { stroke: "#6366f1", strokeWidth: 2 },
+      style: { stroke: "var(--p-violet)", strokeWidth: 2 },
     }),
     [],
   );
@@ -232,6 +232,9 @@ function PublicCanvasInner({
       // a stable `undefined` getter.
       getCanvas: () => undefined,
       isRunning: () => false,
+      spawnFormatFromTezis: async () => {
+        /* read-only */
+      },
       readOnly: true,
     }),
     [getNodeSnapshot],
@@ -286,7 +289,7 @@ function PublicCanvasInner({
             <Controls
               position="bottom-left"
               showInteractive={false}
-              className="!bg-[#11140E] !border-white/10 [&_button]:!bg-[#11140E] [&_button]:!border-white/10 [&_button]:!text-zinc-300 [&_button:hover]:!bg-white/5"
+              className="!bg-[color:var(--p-card-2)] !border-border [&_button]:!bg-[color:var(--p-card-2)] [&_button]:!border-border [&_button]:!text-foreground/80 [&_button:hover]:!bg-foreground/5"
             />
           </ReactFlow>
           <CloneCta token={token} canvasName={canvas.name} />

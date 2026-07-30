@@ -15,6 +15,21 @@ export interface Organization {
   id: UUID;
   name: string;
   slug: string;
+  /** Org state machine:
+   *    - "preview": anonymous visitor (pre-registration), capped ops,
+   *      no timer. Mandatory register prompt after first Format-run.
+   *    - "trial":   registered, inside 24h trial window. Unlimited
+   *      feature access; backend enforces time gate only.
+   *    - "regular": post-trial / paid plan. Phase-2 Plan layer will
+   *      gate feature access.
+   *  Used by the shell to render the right badge + by guards to
+   *  decide which surfaces a user can hit. */
+  kind?: "preview" | "trial" | "regular";
+  /** ISO timestamp — null for regular orgs, set for trial. */
+  trial_expires_at?: string | null;
+  /** Counters bumped on every quota-gated AI call / render. */
+  trial_ai_runs_used?: number;
+  trial_renders_used?: number;
   created_at: string;
 }
 
@@ -40,7 +55,25 @@ export interface CanvasOut {
   updated_at: string;
 }
 
-export type NodeType = "source" | "extract" | "format";
+export type NodeType = "source" | "extract" | "format" | "llm";
+
+export interface LlmChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  ts?: string | null;
+}
+
+export interface LlmNodeData {
+  messages?: LlmChatMessage[];
+  title?: string | null;
+  system_prompt?: string | null;
+}
+
+export interface LlmChatResponse {
+  reply: string;
+  messages: LlmChatMessage[];
+  context_node_count: number;
+}
 export type NodeStatus = "idle" | "running" | "done" | "error";
 
 export interface NodeOut {
@@ -60,6 +93,13 @@ export interface EdgeOut {
   canvas_id: UUID;
   source_node_id: UUID;
   target_node_id: UUID;
+  /**
+   * Per-edge metadata. Today carries `{tezis_index: number}` when a format
+   * node was spawned from a specific talking-point card on the upstream
+   * extract — the worker reads this to pick the right tezis instead of
+   * falling back to the parent extract's `selected_index`.
+   */
+  data?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -76,6 +116,10 @@ export interface SourceNodeData {
   input_type?: SourceInputType;
   content?: string;
   url?: string | null;
+  // Filled by the `fetch_url_article` skill on a successful URL fetch.
+  url_title?: string | null;
+  url_host?: string | null;
+  url_chars?: number | null;
   youtube_url?: string | null;
   youtube_video_id?: string | null;
   youtube_title?: string | null;
@@ -105,9 +149,62 @@ export interface TalkingPoint {
   reasoning: string;
 }
 
+export type ExtractMode = "talking_points" | "summary" | "story_arc";
+
+export type ArcStage = "TOFU" | "MOFU" | "BOFU";
+
+export type ArcLeadMagnetKind = "external_url" | "internal_article";
+
+export type ArcPlatformsMode = "ai" | "fixed";
+
+export interface ArcConfig {
+  big_topic: string;
+  goal?: string;
+  lead_magnet?: string;
+  lead_magnet_kind?: ArcLeadMagnetKind;
+  lead_magnet_url?: string | null;
+  lead_magnet_article_node_id?: string | null;
+  platforms_mode?: ArcPlatformsMode;
+  platforms_fixed?: FormatPlatform[];
+  total_posts_target?: number | null;
+}
+
+export interface ArcSummary {
+  title: string;
+  narrative_summary?: string;
+  total_posts?: number;
+  stages_breakdown?: Partial<Record<ArcStage, number>>;
+}
+
+export interface ArcScene {
+  order: number;
+  stage: ArcStage;
+  platform: FormatPlatform;
+  hook: string;
+  talking_point: string;
+  depends_on: number | null;
+  is_final?: boolean;
+  spawned_node_id?: string | null;
+}
+
 export interface ExtractNodeData {
+  /**
+   * Toggle between extract modes. Default (and legacy) is "talking_points".
+   *   - "summary"   → content_summarizer
+   *   - "story_arc" → story_arc_planner (multi-post warming campaign)
+   */
+  extract_mode?: ExtractMode;
   talking_points?: TalkingPoint[];
   selected_index?: number | null;
+  // Summary-mode fields
+  summary?: string;
+  key_points?: string[];
+  actionable_takeaways?: string[];
+  context_line?: string;
+  // Story-arc-mode fields
+  arc_config?: ArcConfig;
+  arc?: ArcSummary;
+  scenes?: ArcScene[];
 }
 
 export type FormatPlatform =
@@ -118,12 +215,34 @@ export type FormatPlatform =
   | "carousel"
   | "reels"
   | "hooks"
-  | "article";
+  | "article"
+  // Рецензия на весь материал целиком, а не на один тезис.
+  | "review";
 
 export interface CarouselSlide {
   title: string;
   body: string;
   is_cover?: boolean;
+}
+
+/** One rendered slide JPEG hosted on S3 (or local fallback) — see
+ *  `app/services/render/carousel.SlideRender`. */
+export interface RenderedSlide {
+  index: number;
+  is_cover: boolean;
+  url: string;
+  w: number;
+  h: number;
+}
+
+/** Full render output stored on `FormatNodeData.rendered_slides`. */
+export interface RenderedCarouselResult {
+  render_id: string;
+  style: string;
+  duration_seconds: number;
+  cover_prompt: string;
+  generated_at: string;
+  slides: RenderedSlide[];
 }
 
 export interface ReelsBeat {
@@ -177,6 +296,28 @@ export interface FormatNodeData {
   // Carousel-specific
   slides?: CarouselSlide[];
   summary?: string;
+  /**
+   * IG-carousel mechanic: a keyword the audience writes in comments to
+   * trigger a DM auto-reply with a lead magnet / link / template. Stored
+   * on the format node so the user can copy it into ManyChat / DMpro
+   * after publishing.
+   */
+  comment_keyword?: string | null;
+  /**
+   * After a "Другой хук" rehook on a carousel node, the worker writes 3
+   * cover variants here. The UI lets the user cycle between them without
+   * a fresh AI call. `slides[0]` always equals the currently-applied one.
+   */
+  cover_variants?: CarouselSlide[];
+  /**
+   * Output of the visual-render pipeline (Playwright HTML→JPEG + AI cover
+   * image). Set by the `render_carousel` worker, never written from the
+   * frontend. When present, the CarouselBody shows the JPEG strip
+   * INSTEAD of the editable text slides — the rendered slides are the
+   * deliverable. To switch back to editing, the user re-renders or
+   * re-runs the carousel skill (which clears `rendered_slides`).
+   */
+  rendered_slides?: RenderedCarouselResult;
   // Reels-specific
   beats?: ReelsBeat[];
   caption?: string;
@@ -295,6 +436,10 @@ export interface TelegramTargetOut {
   /** Whether a custom bot token is configured for this target. */
   has_bot_token?: boolean;
   is_default: boolean;
+  /** Public channel handle (without @) for the metrics scraper.
+   *  Null when chat_id is a numeric supergroup or a private channel —
+   *  metrics auto-pull silently skips those. */
+  public_handle?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -304,6 +449,7 @@ export interface TelegramTargetCreate {
   chat_id: string;
   bot_token?: string | null;
   is_default?: boolean;
+  public_handle?: string | null;
 }
 
 export interface TelegramTargetUpdate {
@@ -311,9 +457,21 @@ export interface TelegramTargetUpdate {
   chat_id?: string;
   bot_token?: string | null;
   is_default?: boolean;
+  public_handle?: string | null;
 }
 
 export type PublishStatus = "pending" | "sending" | "sent" | "failed";
+
+/** Latest Telegram-channel stats scraped from the public t.me web view.
+ *  Set by the `pull_telegram_metrics_one` worker on a 6-hour cron or by
+ *  `POST /publish-logs/{id}/refresh-metrics` on demand. */
+export interface PublishMetrics {
+  views: number | null;
+  forwards: number | null;
+  reactions: Record<string, number>;
+  fetched_at: string;
+  source: string;
+}
 
 export interface PublishLogOut {
   id: UUID;
@@ -322,6 +480,10 @@ export interface PublishLogOut {
   status: PublishStatus;
   error: string | null;
   message_id: number | null;
+  /** Per-post Telegram metrics (views/forwards/reactions). Null until the
+   *  first metrics fetch lands — sent posts on private channels stay null
+   *  forever (no public web view to scrape). */
+  metrics: PublishMetrics | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -364,6 +526,34 @@ export interface VoiceTraitsExtracted {
   recurring_phrases: string[];
   tone_calibration: string;
   samples_analyzed: number;
+}
+
+// Auto-import (free-tier sources: TG public / YouTube channel / blog URL)
+export type VoiceImportSource = "telegram" | "youtube" | "url";
+
+export interface VoiceImportResult {
+  source: VoiceImportSource;
+  created: number;
+  skipped: number;
+  items: VoiceSampleOut[];
+  notes: string[];
+}
+
+export interface TelegramImportRequest {
+  handle: string;
+  limit?: number;
+  project_id?: string | null;
+}
+
+export interface YoutubeImportRequest {
+  channel: string;
+  limit?: number;
+  project_id?: string | null;
+}
+
+export interface UrlImportRequest {
+  urls: string[];
+  project_id?: string | null;
 }
 
 // ----- Projects -----

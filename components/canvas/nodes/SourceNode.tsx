@@ -15,15 +15,21 @@ import {
   FileUp,
   Inbox,
   Link as LinkIcon,
+  Maximize2,
   Mic,
   Type,
   Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
-import { transcribeYoutube, uploadAudio } from "@/lib/transcription";
+import {
+  fetchUrlArticle,
+  transcribeYoutube,
+  uploadAudio,
+} from "@/lib/transcription";
 import type { NodeOut, SourceInputType, SourceNodeData } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
+import { ContentViewerModal } from "@/components/canvas/ContentViewerModal";
 import { cn } from "@/lib/utils";
 import { t, formatDurationRu } from "@/lib/i18n";
 
@@ -115,8 +121,10 @@ export function SourceNode({ data, selected }: NodeProps) {
           )}
           {inputType === "url" && (
             <UrlPanel
-              value={sourceData.url ?? ""}
-              onCommit={(v) => setData({ url: v })}
+              data={sourceData}
+              setData={setData}
+              status={status}
+              nodeId={node.id}
               readOnly={readOnly}
             />
           )}
@@ -181,6 +189,54 @@ export function SourceNode({ data, selected }: NodeProps) {
   );
 }
 
+/**
+ * Clipped, click-to-expand transcript preview. Inside a fixed-size node the
+ * full text is unreadable and unselectable — the "развернуть" button opens a
+ * full-screen reader (ContentViewerModal) with copy + download. Used by the
+ * YouTube / File / URL panels once their content is ready.
+ */
+function TranscriptPreview({
+  content,
+  title,
+  downloadName,
+}: {
+  content: string;
+  title: string;
+  downloadName: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <div className="relative">
+        <button
+          type="button"
+          className="co-transcript-preview nodrag block w-full cursor-pointer text-left transition hover:bg-foreground/[0.03]"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(true);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="Открыть, прочитать и скопировать полностью"
+        >
+          {content.slice(0, 200)}…
+        </button>
+        <span
+          className="pointer-events-none absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded bg-card/90 px-1.5 py-0.5 text-[9px] text-foreground/80"
+        >
+          <Maximize2 size={9} /> Читать
+        </span>
+      </div>
+      <ContentViewerModal
+        open={open}
+        title={title}
+        text={content}
+        downloadName={downloadName}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 function TextPanel({
   value,
   onCommit,
@@ -209,29 +265,130 @@ function TextPanel({
 }
 
 function UrlPanel({
-  value,
-  onCommit,
+  data,
+  setData,
+  status,
+  nodeId,
   readOnly,
 }: {
-  value: string;
-  onCommit: (v: string) => void;
+  data: SourceNodeData;
+  setData: (p: Partial<SourceNodeData>) => Promise<void>;
+  status: NodeOut["status"];
+  nodeId: string;
   readOnly?: boolean;
 }) {
-  const [draft, setDraft] = React.useState(value);
-  React.useEffect(() => setDraft(value), [value]);
+  // Mirrors YoutubePanel's UX: paste URL → click "Загрузить" → server-side
+  // trafilatura extracts article body → status dot turns green → content
+  // preview shows up. The downstream extract reads `data.content` exactly
+  // like the YouTube path, so no extract-side changes were needed to make
+  // the pipeline work for blog URLs.
+  const { attachSkillRun, isRunning } = useCanvasNodeContext();
+  const running = isRunning(nodeId) || status === "running";
+  const [draft, setDraft] = React.useState(data.url ?? "");
+  React.useEffect(() => setDraft(data.url ?? ""), [data.url]);
+
+  const fetchMutation = useMutation({
+    mutationFn: (url: string) => fetchUrlArticle(nodeId, url),
+    onSuccess: ({ skill_run_id }) => {
+      attachSkillRun(nodeId, skill_run_id);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.canvas.couldNotStartRun,
+      ),
+  });
+
+  const start = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    if (trimmed !== (data.url ?? "")) void setData({ url: trimmed });
+    fetchMutation.mutate(trimmed);
+  };
+
+  const showDone = !running && status === "done" && !!data.content;
+  const fetchedChars = data.url_chars ?? data.content?.length ?? 0;
+
   return (
-    <input
-      className="co-field-input nodrag"
-      type="text"
-      placeholder={t.source.placeholders.url}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft !== value) onCommit(draft);
-      }}
-      onMouseDown={(e) => e.stopPropagation()}
-      disabled={readOnly}
-    />
+    <>
+      <input
+        className="co-field-input nodrag"
+        type="text"
+        placeholder={t.source.placeholders.url}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== (data.url ?? "")) void setData({ url: draft });
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        disabled={readOnly || running}
+      />
+
+      {!running && !showDone && (
+        <button
+          className="co-btn co-btn-primary nodrag"
+          onClick={start}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={readOnly || !draft.trim() || fetchMutation.isPending}
+        >
+          <LinkIcon size={14} />
+          {t.source.fetchUrl}
+        </button>
+      )}
+
+      {running && (
+        <div className="co-spin-row">
+          <div className="co-spinner" />
+          <span>{t.source.progress.fetchingUrl}</span>
+        </div>
+      )}
+
+      {showDone && (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="co-meta-chip">
+              <LinkIcon size={11} />
+              {data.url_host ?? "URL"}
+            </span>
+            {fetchedChars > 0 && (
+              <span className="co-meta-chip">
+                {fetchedChars.toLocaleString("ru")} симв.
+              </span>
+            )}
+          </div>
+          {data.url_title && (
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                lineHeight: 1.45,
+              }}
+            >
+              {data.url_title}
+            </div>
+          )}
+          {data.content && (
+            <TranscriptPreview
+              content={data.content}
+              title={data.url_title || data.url_host || "Статья"}
+              downloadName="article.txt"
+            />
+          )}
+          {/* Allow re-fetch if the user pasted a new URL after success. */}
+          {draft.trim() && draft.trim() !== (data.url ?? "") && (
+            <button
+              className="co-btn co-btn-ghost nodrag"
+              onClick={start}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={readOnly || fetchMutation.isPending}
+            >
+              {t.source.refetchUrl}
+            </button>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -371,9 +528,11 @@ function YoutubePanel({
             </div>
           )}
           {data.content && (
-            <div className="co-transcript-preview">
-              {data.content.slice(0, 200)}…
-            </div>
+            <TranscriptPreview
+              content={data.content}
+              title={data.youtube_title || "Транскрипт YouTube"}
+              downloadName="youtube-transcript.txt"
+            />
           )}
         </>
       )}
@@ -499,9 +658,11 @@ function FilePanel({
             {data.file_name}
           </span>
           {data.content && (
-            <div className="co-transcript-preview">
-              {data.content.slice(0, 200)}…
-            </div>
+            <TranscriptPreview
+              content={data.content}
+              title={data.file_name || "Транскрипт файла"}
+              downloadName={`${(data.file_name || "transcript").replace(/\.[^.]+$/, "")}.txt`}
+            />
           )}
         </>
       )}
@@ -520,7 +681,7 @@ const PORT_STYLE_RIGHT: React.CSSProperties = {
   border: "1px solid rgba(0, 0, 0, 0.06)",
   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
   right: -13,
-  color: "rgba(255,255,255,0.7)",
+  color: "rgb(var(--ink-rgb) / 0.7)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

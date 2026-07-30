@@ -10,7 +10,10 @@ export type FormatTweakMode =
   | "rehook"
   | "shorten"
   | "amplify_voice"
-  | "platform_optimize";
+  | "platform_optimize"
+  // Редактура по проходам: смысл → тональность → предложение → слово →
+  // ритм → приметы машинного текста. См. skills/tweak.py#_FORMAT_EDIT.
+  | "edit";
 
 export type TweakMode = ExtractTweakMode | FormatTweakMode;
 

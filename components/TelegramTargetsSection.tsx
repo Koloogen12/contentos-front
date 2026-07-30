@@ -11,11 +11,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   AlertTriangle,
+  Check,
+  Copy as CopyIcon,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Send,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,8 +26,11 @@ import { ApiError } from "@/lib/api";
 import {
   createTarget,
   deleteTarget,
+  getBotInfo,
   listTargets,
   updateTarget,
+  verifyChat,
+  type TelegramVerifyResult,
 } from "@/lib/telegram-targets";
 import type {
   TelegramTargetCreate,
@@ -51,6 +57,10 @@ const schema = z.object({
   title: z.string().min(1, "Обязательно").max(255),
   chat_id: z.string().min(1, "Обязательно").max(255),
   bot_token: z.string().optional(),
+  // Optional explicit public handle (without @) for the metrics scraper.
+  // When `chat_id` already starts with @ this can stay empty — the
+  // backend derives it. Required only for numeric supergroup IDs.
+  public_handle: z.string().max(64).optional(),
   is_default: z.boolean().optional(),
 });
 
@@ -82,6 +92,13 @@ export function TelegramTargetsSection() {
           <Plus className="h-4 w-4" /> {t.telegram.addBtn}
         </Button>
       </div>
+
+      {/* Persistent bot-setup hint — visible regardless of whether targets
+          exist. Without this the user never sees the bot @handle until they
+          click "Add target", which is the #1 reason for "chat not found"
+          errors in the publish flow. */}
+      <BotSetupBanner />
+
 
       {query.isPending ? (
         <TargetsSkeleton />
@@ -239,6 +256,7 @@ function TargetFormDialog({
       title: "",
       chat_id: "",
       bot_token: "",
+      public_handle: "",
       is_default: false,
     },
   });
@@ -250,6 +268,7 @@ function TargetFormDialog({
       title: target?.title ?? "",
       chat_id: target?.chat_id ?? "",
       bot_token: "",
+      public_handle: target?.public_handle ?? "",
       is_default: target?.is_default ?? false,
     });
   }, [open, target, reset]);
@@ -285,11 +304,14 @@ function TargetFormDialog({
 
   const onSubmit = handleSubmit((values) => {
     const trimmedToken = values.bot_token?.trim() ?? "";
+    const trimmedHandle =
+      (values.public_handle ?? "").trim().replace(/^@/, "");
     if (mode === "create") {
       const payload: TelegramTargetCreate = {
         title: values.title.trim(),
         chat_id: values.chat_id.trim(),
         bot_token: trimmedToken === "" ? null : trimmedToken,
+        public_handle: trimmedHandle || null,
         is_default: !!values.is_default,
       };
       createMutation.mutate(payload);
@@ -297,6 +319,9 @@ function TargetFormDialog({
       const patch: TelegramTargetUpdate = {
         title: values.title.trim(),
         chat_id: values.chat_id.trim(),
+        // Empty string here means "clear the public_handle" — backend
+        // treats falsy as NULL so the metrics scraper stops trying.
+        public_handle: trimmedHandle,
         is_default: !!values.is_default,
       };
       // Only send bot_token if the user typed something — otherwise we'd
@@ -309,6 +334,33 @@ function TargetFormDialog({
   });
 
   const isDefault = !!watch("is_default");
+  const chatIdValue = watch("chat_id");
+
+  // Verification is a manual click — not auto-debounced — because each
+  // call is a real Telegram API round trip and we don't want to spam
+  // `getChat` while the user types. The result clears when the input
+  // changes so a stale ✅ can't lull the user into saving a broken target.
+  const [verifyResult, setVerifyResult] =
+    React.useState<TelegramVerifyResult | null>(null);
+  const verifyMutation = useMutation({
+    mutationFn: (chat_id: string) => verifyChat(chat_id),
+    onSuccess: (r) => {
+      setVerifyResult(r);
+      if (r.ok) toast.success("Бот видит канал — можно сохранять");
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : "Не удалось проверить доступ",
+      ),
+  });
+  // Wipe the verification card the moment the user edits the chat-id
+  // (or the dialog reopens). Prevents a green tick for one channel
+  // applying to a different one after retyping.
+  React.useEffect(() => {
+    setVerifyResult(null);
+    verifyMutation.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatIdValue, open]);
 
   return (
     <Dialog
@@ -330,6 +382,7 @@ function TargetFormDialog({
             Боту нужны права админа в канале/чате для публикации.
           </DialogDescription>
         </DialogHeader>
+        {mode === "create" && <BotSetupCard />}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="tg-title">Название</Label>
@@ -347,7 +400,26 @@ function TargetFormDialog({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="tg-chat-id">Chat ID</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="tg-chat-id">Chat ID</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={
+                  !chatIdValue?.trim() || verifyMutation.isPending
+                }
+                onClick={() => verifyMutation.mutate(chatIdValue!.trim())}
+                className="h-7 gap-1.5 text-[11px]"
+              >
+                {verifyMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-3 w-3" />
+                )}
+                Проверить доступ
+              </Button>
+            </div>
             <Input
               id="tg-chat-id"
               placeholder="@yourchannel или -1001234567890"
@@ -363,6 +435,7 @@ function TargetFormDialog({
                 {errors.chat_id.message}
               </p>
             )}
+            {verifyResult && <VerifyResultCard result={verifyResult} />}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tg-bot-token">
@@ -382,6 +455,25 @@ function TargetFormDialog({
               autoComplete="off"
               {...register("bot_token")}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tg-public-handle">
+              Публичный handle{" "}
+              <span className="text-muted-foreground">
+                {t.createCanvas.descriptionOptional}
+              </span>
+            </Label>
+            <Input
+              id="tg-public-handle"
+              placeholder="kochnefff"
+              autoComplete="off"
+              {...register("public_handle")}
+            />
+            <p className="text-xs text-muted-foreground">
+              Нужен, чтобы автоматически подтягивать просмотры и реакции с
+              t.me. Если Chat ID — @username, оставь пустым (вычислим сами).
+              Для приватных каналов оставь пустым — метрики недоступны.
+            </p>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -518,6 +610,178 @@ function ErrorBlock({
           <RefreshCw className="h-4 w-4" /> {t.dash.retry}
         </Button>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Compact persistent banner shown above the targets list in Settings.
+ * Shorter than `BotSetupCard` (no numbered steps) — the goal is just to
+ * keep the bot @handle in the user's field of view at all times. The full
+ * step-by-step lives inside the add-target dialog.
+ */
+function BotSetupBanner() {
+  const botQuery = useQuery({
+    queryKey: ["telegram-bot-info"],
+    queryFn: getBotInfo,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [copied, setCopied] = React.useState(false);
+  const handle = botQuery.data?.username
+    ? `@${botQuery.data.username}`
+    : null;
+  const copy = async () => {
+    if (!handle) return;
+    try {
+      await navigator.clipboard.writeText(handle);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — non-fatal */
+    }
+  };
+  if (!handle && !botQuery.isPending) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/[0.05] px-4 py-3 text-[12.5px] text-info/90">
+      <div className="flex items-start gap-2">
+        <Send className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
+        <div className="leading-snug">
+          <span className="font-medium text-info">
+            Бот публикации:{" "}
+          </span>
+          Чтобы посты уходили в твой канал — добавь бота админом с правом
+          «Публикация сообщений». Бот один для всех аккаунтов THE DRAFT.
+        </div>
+      </div>
+      {handle && (
+        <button
+          type="button"
+          onClick={copy}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-info/30 bg-info/[0.08] px-2 py-1 font-mono text-[12px] text-info transition hover:bg-info/[0.14]"
+          title="Скопировать handle бота"
+        >
+          {copied ? (
+            <Check className="h-3 w-3" />
+          ) : (
+            <CopyIcon className="h-3 w-3" />
+          )}
+          {handle}
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Setup card shown at the top of the "Add target" dialog. Surfaces the
+ * shared ContentOS bot's @username and the exact steps the user must
+ * complete BEFORE saving a target — without this, the most likely outcome
+ * is a saved target that immediately returns "chat not found" on publish.
+ *
+ * The bot username is fetched from the backend (which calls `getMe`) so
+ * we never end up with a stale frontend constant after a token rotation.
+ */
+function BotSetupCard() {
+  const botQuery = useQuery({
+    queryKey: ["telegram-bot-info"],
+    queryFn: getBotInfo,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [copied, setCopied] = React.useState(false);
+  const handle = botQuery.data?.username
+    ? `@${botQuery.data.username}`
+    : null;
+
+  const copy = async () => {
+    if (!handle) return;
+    try {
+      await navigator.clipboard.writeText(handle);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard write can fail in private/iframe modes; silent — user
+      // can still select-and-copy the text manually.
+    }
+  };
+
+  return (
+    <div className="mb-3 rounded-xl border border-info/25 bg-info/[0.05] p-4 text-[12.5px] leading-snug text-info">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-info">
+          <Send className="h-3 w-3" /> Бот THE DRAFT
+        </div>
+        {handle ? (
+          <button
+            type="button"
+            onClick={copy}
+            className="inline-flex items-center gap-1.5 rounded-md border border-info/30 bg-info/[0.08] px-2 py-1 font-mono text-[12px] text-info transition hover:bg-info/[0.14]"
+            title="Скопировать handle бота"
+          >
+            {copied ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <CopyIcon className="h-3 w-3" />
+            )}
+            {handle}
+          </button>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            {botQuery.isPending ? "Загружаем…" : "Бот не настроен"}
+          </span>
+        )}
+      </div>
+      <ol className="ml-4 list-decimal space-y-1 text-[12px] text-info/90">
+        <li>Открой свой Telegram-канал.</li>
+        <li>
+          Добавь {handle ?? "бота"} в админы с правом{" "}
+          <strong>«Публикация сообщений»</strong>.
+        </li>
+        <li>
+          Введи ниже @username канала (если он публичный) или числовой ID
+          (<code className="font-mono">-100…</code>) и нажми «Проверить доступ».
+        </li>
+      </ol>
+    </div>
+  );
+}
+
+
+/** Renders the green/red feedback card after the user clicks "Verify". */
+function VerifyResultCard({ result }: { result: TelegramVerifyResult }) {
+  if (result.ok) {
+    return (
+      <div className="mt-2 flex items-center gap-2 rounded-md border border-success/30 bg-success/[0.07] px-3 py-2 text-[12px] text-success">
+        <Check className="h-3.5 w-3.5 shrink-0" />
+        <div className="leading-snug">
+          <span className="font-medium">
+            {result.chat_title ?? "Канал найден"}
+          </span>
+          {result.chat_type && (
+            <span className="ml-1 text-success/70">
+              · {result.chat_type}
+            </span>
+          )}
+          {typeof result.member_count === "number" && (
+            <span className="ml-1 text-success/70">
+              · {result.member_count.toLocaleString("ru")} подписчиков
+            </span>
+          )}
+          {result.can_post === false && (
+            <div className="mt-1 text-warn">
+              ⚠ Бот видит канал, но не админ — публикация упадёт. Дай
+              право «Публикация сообщений».
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/[0.07] px-3 py-2 text-[12px] text-destructive">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div className="leading-snug">{result.detail ?? "Доступа нет"}</div>
     </div>
   );
 }

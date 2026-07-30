@@ -267,12 +267,12 @@ export default function KnowledgePage() {
                           </span>
                         )}
                         {item.viral_score !== null && (
-                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                          <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
                             {t.knowledge.score(item.viral_score)}
                           </span>
                         )}
                         {item.is_dormant && (
-                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                          <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">
                             {t.knowledge.dormant}
                           </span>
                         )}

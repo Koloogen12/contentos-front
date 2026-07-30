@@ -26,6 +26,8 @@ import {
 } from "@/lib/canvases";
 import type { CanvasDetail } from "@/lib/types";
 import { t } from "@/lib/i18n";
+import { useAuthStore } from "@/stores/auth";
+import { TrialBadge } from "@/components/TrialBadge";
 
 interface CanvasTopBarProps {
   canvas: CanvasDetail;
@@ -40,6 +42,7 @@ export function CanvasTopBar({
 }: CanvasTopBarProps) {
   const router = useRouter();
   const qc = useQueryClient();
+  const isPreview = useAuthStore((s) => s.organization?.kind === "preview");
   const [editing, setEditing] = React.useState(false);
   const [val, setVal] = React.useState(canvas.name);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -132,6 +135,12 @@ export function CanvasTopBar({
       </div>
 
       <div className="co-topbar-actions">
+        {/* Preview/Trial badge — visible inside the immersive canvas chrome
+            since AppShell's TopBar (which usually hosts the badge) is hidden
+            on /canvas/* routes. Without this the trial countdown / preview
+            counter would silently disappear the moment the user opens any
+            canvas, including right after preview→trial conversion. */}
+        <TrialBadge />
         <button
           type="button"
           className="co-btn co-btn-ghost"
@@ -162,14 +171,16 @@ export function CanvasTopBar({
           <Share2 size={13} />
           {t.canvas.share}
         </button>
-        <button
-          type="button"
-          className="co-iconbtn"
-          onClick={() => router.push("/settings")}
-          title={t.canvas.settings}
-        >
-          <Settings size={14} />
-        </button>
+        {!isPreview && (
+          <button
+            type="button"
+            className="co-iconbtn"
+            onClick={() => router.push("/settings")}
+            title={t.canvas.settings}
+          >
+            <Settings size={14} />
+          </button>
+        )}
       </div>
     </div>
   );

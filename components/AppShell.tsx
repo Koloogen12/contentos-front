@@ -10,17 +10,23 @@ import {
   ChevronRight,
   FolderKanban,
   LogOut,
+  Mic,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Settings,
   LayoutGrid,
+  Sparkles,
   Trash2,
+  TrendingUp,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
+import { TrialBadge } from "@/components/TrialBadge";
+import { Wordmark } from "@/components/Wordmark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { deleteProject, listProjects } from "@/lib/projects";
@@ -55,11 +61,29 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-const NAV: NavItem[] = [
-  { label: t.shell.home, href: "/dashboard", icon: LayoutGrid },
-  { label: t.shell.knowledge, href: "/knowledge", icon: BookOpen },
-  { label: t.plan.nav, href: "/plan", icon: CalendarDays },
-  { label: t.shell.settings, href: "/settings", icon: Settings },
+interface NavItemWithFlags extends NavItem {
+  /** Подсказка при наведении — из прототипа. */
+  hint?: string;
+  // Hidden when org.kind === "preview" (anonymous visitor). Trial /
+  // regular users see everything. Surfaces that need server-side data
+  // (Voice samples, Performance metrics, Settings/brand-context) are
+  // hidden in preview because they're either empty or pre-seeded in a
+  // way that confuses first-time visitors. Plan + Ideas + Knowledge
+  // are KEPT in preview as feature-discovery touch-points.
+  hideInPreview?: boolean;
+}
+
+const NAV: NavItemWithFlags[] = [
+  // Пять пунктов и подсказки — из прототипа (prime2-shell.jsx#Sidebar2).
+  // Performance и Settings в сайдбаре хендоффа нет: аналитика живёт режимом
+  // внутри «Плана», настройки — в меню аккаунта. Пока «Плана» в новой
+  // раскладке нет, обе страницы доступны из меню аккаунта в топбаре, чтобы
+  // ничего не стало недостижимым.
+  { label: "Канвасы", href: "/dashboard", icon: LayoutGrid, hint: "Материалы в работе" },
+  { label: "Идеи", href: "/ideas", icon: Sparkles, hint: "Банк тезисов и заметок" },
+  { label: "База знаний", href: "/knowledge", icon: BookOpen, hint: "Факты, цифры, кейсы — контекст для AI" },
+  { label: "План", href: "/plan", icon: CalendarDays, hint: "Очередь, календарь, аналитика" },
+  { label: "Голос", href: "/voice", icon: Mic, hideInPreview: true, hint: "Как ты пишешь" },
 ];
 
 const FILTERABLE_PATHS = ["/dashboard", "/knowledge"] as const;
@@ -78,6 +102,15 @@ function isImmersive(pathname: string | null): boolean {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const shellOrg = useAuthStore((s) => s.organization);
+  const isPreviewShell = shellOrg?.kind === "preview";
+  // Filter nav based on org kind. We don't move this into NAV at module
+  // scope because the org becomes known only after auth hydrates — a
+  // single re-render is cheap.
+  const visibleNav = React.useMemo(
+    () => NAV.filter((item) => !(isPreviewShell && item.hideInPreview)),
+    [isPreviewShell],
+  );
 
   const [collapsed, setCollapsed] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -114,60 +147,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside
-        className={cn(
-          "hidden flex-col border-r border-[color:var(--border-subtle)] bg-[color:var(--node-bg)]/40 lg:flex transition-[width] duration-150 ease-out",
-          collapsed ? "w-[56px]" : "w-60",
-        )}
-      >
-        <div className="flex h-14 items-center justify-between gap-2 border-b border-[color:var(--border-subtle)] px-3">
-          {!collapsed && (
-            <span className="text-[12px] font-bold tracking-[0.04em] text-foreground">
-              THE CONTENT
-            </span>
-          )}
+    <div className="pw" data-collapsed={collapsed ? "1" : "0"}>
+      <div className="sb">
+        <div className="sb-top">
+          <Wordmark size="sm" markOnly={collapsed} />
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
-            className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-            aria-label={collapsed ? "Развернуть" : "Свернуть"}
-            title={collapsed ? "Развернуть" : "Свернуть"}
+            className="sb-collapse tt dn"
+            data-tt={collapsed ? "Развернуть панель" : "Свернуть панель"}
+            aria-label={collapsed ? "Развернуть панель" : "Свернуть панель"}
           >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
-          {NAV.map((item) => {
+
+        <div className="sb-nav">
+          {visibleNav.map((item) => {
             const active =
-              pathname === item.href || pathname?.startsWith(`${item.href}/`);
+              pathname === item.href ||
+              pathname?.startsWith(`${item.href}/`) ||
+              // На экране канваса активным остаётся «Канвасы» — так в прототипе.
+              (item.href === "/dashboard" && pathname?.startsWith("/canvas/"));
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                  collapsed && "justify-center px-2",
-                  active
-                    ? "bg-white/10 text-foreground"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                )}
-                title={collapsed ? item.label : undefined}
+                className="sb-item"
+                data-on={active ? "1" : "0"}
+                aria-current={active ? "page" : undefined}
+                title={item.hint}
               >
-                <Icon size={16} />
-                {!collapsed && <span>{item.label}</span>}
+                <Icon size={17} />
+                <span>{item.label}</span>
               </Link>
             );
           })}
+        </div>
 
-          {!collapsed && <ProjectsSection />}
-        </nav>
-      </aside>
+        {!collapsed && <ProjectsSection />}
+      </div>
 
-      <div className="flex flex-1 flex-col">
+      <div className="main">
         <TopBar onOpenSearch={() => setSearchOpen(true)} />
-        <main className="flex-1">{children}</main>
+        <div className="body">{children}</div>
       </div>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
@@ -212,58 +236,54 @@ function ProjectsSection() {
   );
 
   return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between px-3 pb-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t.shell.projects}
-        </span>
-        <button
-          type="button"
+    <>
+      <div className="sb-lbl">
+        {t.shell.projects}
+        <span
+          className="add tt dn"
+          role="button"
+          tabIndex={0}
+          data-tt={t.shell.newProject}
+          aria-label={t.shell.newProject}
           onClick={() => setCreateOpen(true)}
-          className="rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-          title={t.shell.newProject}
+          onKeyDown={(e) => e.key === "Enter" && setCreateOpen(true)}
         >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+          <Plus size={13} />
+        </span>
       </div>
-      <ul className="space-y-0.5">
-        <li>
-          <button
-            type="button"
-            onClick={() => navigateWithProject(null)}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
-              !selectedProjectId
-                ? "bg-white/10 text-foreground"
-                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-            )}
-          >
-            <FolderKanban className="h-3.5 w-3.5" />
-            <span>{t.shell.all}</span>
-          </button>
-        </li>
+      <div className="sb-nav">
+        <div
+          className="sb-proj"
+          data-on={!selectedProjectId ? "1" : "0"}
+          onClick={() => navigateWithProject(null)}
+        >
+          <LayoutGrid size={14} />
+          <span>{t.shell.all}</span>
+        </div>
 
         {query.isPending ? (
           <ProjectsSkeleton />
         ) : query.isError ? (
-          <li className="px-3 py-1 text-[11px] text-destructive">
-            {query.error instanceof ApiError
-              ? query.error.detail
-              : "Не удалось загрузить проекты"}
-          </li>
+          <div className="sb-proj" style={{ color: "var(--p-red)" }}>
+            <span>
+              {query.error instanceof ApiError
+                ? query.error.detail
+                : "Не удалось загрузить проекты"}
+            </span>
+          </div>
         ) : (
-          (query.data ?? []).map((p) => (
+          (query.data ?? []).map((pr) => (
             <ProjectRow
-              key={p.id}
-              project={p}
-              active={selectedProjectId === p.id}
-              onSelect={() => navigateWithProject(p.id)}
-              onEdit={() => setEditing(p)}
-              onDelete={() => setDeleting(p)}
+              key={pr.id}
+              project={pr}
+              active={selectedProjectId === pr.id}
+              onSelect={() => navigateWithProject(pr.id)}
+              onEdit={() => setEditing(pr)}
+              onDelete={() => setDeleting(pr)}
             />
           ))
         )}
-      </ul>
+      </div>
 
       <ProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ProjectDialog
@@ -275,7 +295,7 @@ function ProjectsSection() {
         project={deleting}
         onClose={() => setDeleting(null)}
       />
-    </div>
+    </>
   );
 }
 
@@ -305,34 +325,29 @@ function ProjectRow({
   onDelete: () => void;
 }) {
   return (
-    <li className="group relative">
-      <button
-        type="button"
+    // .sb-proj из прототипа: цветная точка + название. Меню действий — наше,
+    // в прототипе его нет; появляется по наведению, чтобы не шуметь в списке.
+    <div className="sb-proj group relative" data-on={active ? "1" : "0"}>
+      <i style={{ background: project.color }} aria-hidden />
+      <span
+        className="line-clamp-1 flex-1 text-left"
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
-        className={cn(
-          "flex w-full items-center gap-3 rounded-md px-3 py-1.5 pr-8 text-sm transition-colors",
-          active
-            ? "bg-white/10 text-foreground"
-            : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-        )}
+        onKeyDown={(e) => e.key === "Enter" && onSelect()}
       >
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: project.color }}
-          aria-hidden
-        />
-        <span className="line-clamp-1 text-left">{project.name}</span>
-      </button>
-      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        {project.name}
+      </span>
+      <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label={`Project ${project.name} actions`}
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              aria-label={`Проект ${project.name}: действия`}
+              className="grid h-5 w-5 place-items-center rounded-md text-[color:var(--p-ink-3)] hover:bg-[color:var(--p-line)] hover:text-[color:var(--p-ink)]"
               onClick={(e) => e.stopPropagation()}
             >
-              <MoreHorizontal className="h-3.5 w-3.5" />
+              <MoreHorizontal size={13} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
@@ -355,8 +370,8 @@ function ProjectRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-    </li>
+      </span>
+    </div>
   );
 }
 
@@ -444,59 +459,80 @@ function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
   }, [user]);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-[color:var(--border-subtle)] bg-background/60 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/40">
-      <div className="text-xs text-muted-foreground">
-        {organization ? organization.name : ""}
-      </div>
+    // .top из прототипа: имя воркспейса, чип тарифа, поиск по центру,
+    // тумблер темы, аккаунт. Высота 64px задана в CSS.
+    <div className="top" style={{ position: "relative" }}>
+      <span className="top-ws">{organization?.name ?? ""}</span>
+      {/* Для триала и превью показываем живой счётчик квоты, для обычного
+          аккаунта — статичный чип, как в прототипе. */}
+      {organization?.kind === "regular" ? (
+        <span className="chip">Автор</span>
+      ) : (
+        <TrialBadge />
+      )}
+
       <button
         type="button"
+        className="top-search"
         onClick={onOpenSearch}
-        className="ml-3 hidden flex-1 max-w-md items-center gap-2 rounded-lg border border-border bg-background/40 px-3 py-1.5 text-left text-[12.5px] text-muted-foreground transition-colors hover:bg-white/5 md:flex"
+        style={{ cursor: "text", textAlign: "left", fontFamily: "inherit" }}
         aria-label={t.search.dialogTitle}
       >
-        <Search size={13} />
-        <span className="truncate">{t.search.placeholder}</span>
-        <span className="ml-auto rounded border border-border px-1 py-0.5 text-[10px] font-medium tabular-nums">
-          {t.search.triggerHint}
-        </span>
+        <Search size={15} />
+        <span style={{ flex: 1 }}>{t.search.placeholder}</span>
+        <kbd>{t.search.triggerHint}</kbd>
       </button>
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        className="ml-3 flex items-center gap-2 rounded-md p-2 text-muted-foreground hover:bg-white/5 md:hidden"
-        aria-label={t.search.dialogTitle}
-      >
-        <Search size={14} />
-      </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-white/5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold">
-            {initials || "?"}
-          </div>
-          <div className="hidden text-left text-sm md:block">
-            <div className="font-medium leading-tight">
-              {user?.display_name || user?.email?.split("@")[0]}
-            </div>
-            {user?.email && (
-              <div className="text-xs text-muted-foreground">{user.email}</div>
-            )}
-          </div>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Аккаунт</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() => {
-              logout();
-              if (typeof window !== "undefined") {
-                window.location.href = "/login";
-              }
-            }}
+
+      <ThemeToggle />
+
+      {organization?.kind === "preview" ? (
+        // Превью: синтетический адрес (preview-…@preview.contentos.local)
+        // наружу не показываем — он выдаёт внутренний идентификатор и
+        // сбивает посетителя. Вместо него простой вход.
+        <Link href="/login" className="btn btn-w btn-sm">
+          Войти
+        </Link>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="top-me"
+            style={{ border: 0, background: "none", cursor: "pointer", fontFamily: "inherit" }}
           >
-            <LogOut className="h-4 w-4" /> {t.auth.signOut}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </header>
+            <span className="av">{initials || "?"}</span>
+            <div style={{ textAlign: "left" }}>
+              <b>{user?.display_name || user?.email?.split("@")[0]}</b>
+              {user?.email && <span>{user.email}</span>}
+            </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuLabel>{user?.display_name || "Аккаунт"}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {/* Настройки и Performance живут здесь: в сайдбаре хендоффа их нет,
+                но страницы существуют и не должны стать недостижимыми. */}
+            <DropdownMenuItem asChild>
+              <Link href="/settings">
+                <Settings className="h-4 w-4" /> Настройки
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/performance">
+                <TrendingUp className="h-4 w-4" /> Метрики постов
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                logout();
+                if (typeof window !== "undefined") {
+                  window.location.href = "/login";
+                }
+              }}
+            >
+              <LogOut className="h-4 w-4" /> {t.auth.signOut}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }

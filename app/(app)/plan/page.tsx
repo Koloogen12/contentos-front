@@ -26,6 +26,7 @@ import { QueueSidebar } from "@/components/plan/QueueSidebar";
 import { InsightsPanel } from "@/components/plan/InsightsPanel";
 import { PostDetailDrawer } from "@/components/plan/PostDetailDrawer";
 import { QuickAddDialog } from "@/components/plan/QuickAddDialog";
+import { TrialRedirect } from "@/components/TrialRedirect";
 
 type PlanView = "week" | "month" | "list" | "analytics";
 
@@ -111,6 +112,7 @@ export default function PlanPage() {
 
   return (
     <div className="flex flex-col">
+      <TrialRedirect />
       {/* Top bar */}
       <header className="flex flex-wrap items-center gap-3 border-b border-[color:var(--border-subtle)] bg-background/60 px-6 py-3">
         <div className="text-[15px] font-semibold">{t.plan.title}</div>

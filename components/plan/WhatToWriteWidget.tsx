@@ -38,7 +38,7 @@ export function WhatToWriteWidget() {
   if (!data || data.recommendations.length === 0) return null;
 
   return (
-    <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+    <section className="mt-6 rounded-2xl border border-border bg-foreground/[0.02] p-5">
       <div className="mb-3 flex items-center gap-2">
         <Sparkles size={16} className="text-[color:#a78bfa]" />
         <h2 className="text-[15px] font-semibold">
@@ -120,7 +120,7 @@ function RecommendationRow({ rec }: { rec: WhatToWriteRecommendation }) {
             </span>
           )}
           {rec.viral_score !== null && (
-            <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--text-secondary)]">
+            <span className="rounded-full bg-foreground/5 px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--text-secondary)]">
               {rec.viral_score}/20
             </span>
           )}

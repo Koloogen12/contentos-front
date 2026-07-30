@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,6 +33,7 @@ import { useAuthStore } from "@/stores/auth";
 import type { BrandContextOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LinkedInAccountsSection } from "@/components/LinkedInAccountsSection";
 import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
 import { VoiceTrainingSection } from "@/components/VoiceTrainingSection";
 import { t } from "@/lib/i18n";
@@ -73,7 +74,50 @@ const SECTIONS: { id: Section; label: string; Icon: LucideIcon }[] = [
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [tab, setTab] = React.useState<Section>("profile");
+  const searchParams = useSearchParams();
+
+  // Initial tab comes from `?tab=` so deep-links from elsewhere (the trial
+  // badge's "Тарифы" CTA, or links inside the app) open on the right
+  // section. "subscription" is the public-facing slug for the billing tab
+  // — we accept both for resilience.
+  const initialTab: Section = React.useMemo(() => {
+    const raw = searchParams.get("tab");
+    if (raw === "subscription" || raw === "billing") return "billing";
+    if (
+      raw === "profile" ||
+      raw === "voice" ||
+      raw === "ai" ||
+      raw === "appearance" ||
+      raw === "shortcuts"
+    ) {
+      return raw;
+    }
+    return "profile";
+  }, [searchParams]);
+  const [tab, setTab] = React.useState<Section>(initialTab);
+  // Keep the URL in sync when the user clicks a different tab, so refreshing
+  // / back-button-ing lands them on the same screen.
+  const setTabAndUrl = React.useCallback(
+    (next: Section) => {
+      setTab(next);
+      const slug = next === "billing" ? "subscription" : next;
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "profile") params.delete("tab");
+      else params.set("tab", slug);
+      const qs = params.toString();
+      router.replace(`/settings${qs ? `?${qs}` : ""}`);
+    },
+    [router, searchParams],
+  );
+
+  // Defense-in-depth: preview (anonymous) users get bounced away from
+  // settings. Direct URL hits, bookmarks, stale gear buttons we might
+  // have missed elsewhere — all funnel back to /dashboard.
+  const isPreview = useAuthStore((s) => s.organization?.kind === "preview");
+  React.useEffect(() => {
+    if (isPreview) router.replace("/dashboard");
+  }, [isPreview, router]);
+  if (isPreview) return null;
 
   return (
     <div className="co-settings-screen">
@@ -96,7 +140,7 @@ export default function SettingsPage() {
               key={s.id}
               type="button"
               className={cn("co-settings-tab", tab === s.id && "active")}
-              onClick={() => setTab(s.id)}
+              onClick={() => setTabAndUrl(s.id)}
             >
               <s.Icon size={15} />
               {s.label}
@@ -201,78 +245,274 @@ function VoiceSection() {
   );
 }
 
+/**
+ * AI-провайдер — read-only until per-account model selection is built.
+ *
+ * This screen used to be a Lovable-prototype mock: a local useState radio
+ * group that persisted nothing, over a hardcoded list ("Claude Sonnet 4.5 ·
+ * ПО УМОЛЧАНИЮ") that never matched the server. It read as a working
+ * setting, so it actively misled about which model the nodes run on.
+ *
+ * Until the real feature exists (org-level model override + encrypted own
+ * API key), this shows the truth: the active server model, non-clickable,
+ * with the alternatives marked as not-yet-available. The API-key input is
+ * gone rather than dead — a password field that silently discards input is
+ * worse than no field.
+ */
 function AISection() {
-  const [selected, setSelected] = React.useState("claude");
   return (
     <div className="co-settings-block">
       <div className="co-settings-h">{t.settings.sections.ai}</div>
       <div className="co-settings-sub">{t.settings.ai.sub}</div>
       <div className="co-ai-providers">
-        {t.settings.ai.providers.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={cn("co-ai-card", selected === p.id && "selected")}
-            onClick={() => setSelected(p.id)}
-          >
+        {t.settings.ai.providers.map((p) => {
+          const active = p.badge === "АКТИВНА";
+          return (
             <div
-              className={cn("co-radio-circle", selected === p.id && "checked")}
+              key={p.id}
+              className={cn("co-ai-card", active && "selected")}
+              style={active ? undefined : { opacity: 0.55 }}
             >
-              {selected === p.id ? <span style={{ fontSize: 9 }}>✓</span> : null}
-            </div>
-            <div style={{ flex: 1, textAlign: "left" }}>
-              <div className="flex items-center gap-2">
-                <div style={{ fontSize: 13.5, fontWeight: 500 }}>{p.name}</div>
-                {p.badge && <span className="co-badge-pill">{p.badge}</span>}
+              <div className={cn("co-radio-circle", active && "checked")}>
+                {active ? <span style={{ fontSize: 9 }}>✓</span> : null}
               </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--text-tertiary)",
-                  marginTop: 3,
-                }}
-              >
-                {p.sub}
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <div className="flex items-center gap-2">
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                    {p.name}
+                  </div>
+                  {p.badge && <span className="co-badge-pill">{p.badge}</span>}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--text-tertiary)",
+                    marginTop: 3,
+                  }}
+                >
+                  {p.sub}
+                </div>
               </div>
             </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
-      <div style={{ marginTop: 28 }}>
-        <div className="co-voice-section-h">{t.settings.ai.apiKeyHeader}</div>
-        <div className="co-settings-field">
-          <input
-            className="co-field-input"
-            type="password"
-            placeholder="sk-ant-..."
-          />
-          <div
-            style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}
-          >
-            {t.settings.ai.apiKeyHint}
-          </div>
-        </div>
+      <div
+        style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 14 }}
+      >
+        {t.settings.ai.soonNote}
       </div>
     </div>
   );
 }
 
 function BillingSection() {
+  const org = useAuthStore((s) => s.organization);
+  const kind = org?.kind ?? "regular";
+
+  // Current plan block — driven entirely by org.kind so we never lie
+  // about the user's state. Trial countdown is recomputed locally
+  // because the parent doesn't poll /me here and we don't want to add
+  // a separate query just for this card.
+  let currentPlan: {
+    badge: string;
+    badgeTone: "amber" | "emerald" | "violet";
+    title: string;
+    sub: string;
+  };
+  if (kind === "trial") {
+    const expiresAt = org?.trial_expires_at
+      ? new Date(org.trial_expires_at).getTime()
+      : 0;
+    const secondsLeft = expiresAt
+      ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))
+      : 0;
+    const hours = Math.floor(secondsLeft / 3600);
+    const mins = Math.floor((secondsLeft % 3600) / 60);
+    const left =
+      hours > 0 ? `${hours}ч ${mins}м` : mins > 0 ? `${mins}м` : "истёк";
+    currentPlan = {
+      badge: "TRIAL",
+      badgeTone: "emerald",
+      title: "Триал · 24 часа без лимитов",
+      sub: `До конца ${left}. После — выбери тариф ниже или перейдёшь на Free.`,
+    };
+  } else if (kind === "preview") {
+    currentPlan = {
+      badge: "PREVIEW",
+      badgeTone: "amber",
+      title: "Превью без регистрации",
+      sub: "Хардкап: 1 канвас, 3 AI-операции, 1 рендер. Зарегистрируйся, чтобы получить триал.",
+    };
+  } else {
+    currentPlan = {
+      badge: "FREE",
+      badgeTone: "violet",
+      title: "Free план",
+      sub: "Базовые лимиты. Подписки с расширенными опциями появятся ниже — Phase 2 (T-Bank, recurring).",
+    };
+  }
+
   return (
     <div className="co-settings-block">
       <div className="co-settings-h">{t.settings.sections.billing}</div>
       <div className="co-settings-sub">{t.settings.billing.sub}</div>
-      <div className="co-billing-card">
-        <div className="co-plan-pill">{t.settings.billing.pro}</div>
-        <div className="co-plan-price">
-          <span className="co-plan-price-num">$24</span>
-          <span className="co-plan-price-per">{t.settings.billing.perMonth}</span>
+
+      <CurrentPlanCard plan={currentPlan} />
+
+      <div className="mt-6">
+        <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Тарифы
         </div>
-        <div className="co-plan-charge">Следующее списание · 28 ноября 2025</div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <PlanPreview
+            name="Solo"
+            price="990 ₽"
+            features={[
+              "Безлимит AI-операций",
+              "До 30 рендеров каруселей/мес",
+              "Все платформы",
+            ]}
+          />
+          <PlanPreview
+            name="Pro"
+            price="2 490 ₽"
+            highlight
+            features={[
+              "Всё из Solo",
+              "Безлимит рендеров",
+              "Метрики Telegram + LinkedIn",
+              "Приоритетные модели",
+            ]}
+          />
+          <PlanPreview
+            name="Team"
+            price="4 990 ₽"
+            features={[
+              "Всё из Pro",
+              "До 5 пользователей",
+              "Shared brand voice",
+              "Поддержка в Telegram",
+            ]}
+          />
+        </div>
+        <p className="mt-3 text-[12px] text-muted-foreground">
+          Подключение карт через Т-Банк появится в ближайшем апдейте
+          (Phase 2). Сейчас можно остаться на Free после окончания триала
+          без каких-либо действий.
+        </p>
       </div>
-      <div style={{ marginTop: 28 }}>
+
+      <div className="mt-8">
         <TelegramTargetsSection />
       </div>
+      <div className="mt-8">
+        <LinkedInAccountsSection />
+      </div>
+    </div>
+  );
+}
+
+
+function CurrentPlanCard({
+  plan,
+}: {
+  plan: {
+    badge: string;
+    badgeTone: "amber" | "emerald" | "violet";
+    title: string;
+    sub: string;
+  };
+}) {
+  const tone = {
+    amber:
+      "border-warn/30 bg-warn/[0.06] text-warn",
+    emerald:
+      "border-success/30 bg-success/[0.06] text-success",
+    violet:
+      "border-content/30 bg-content/[0.06] text-content",
+  }[plan.badgeTone];
+  const pillTone = {
+    amber: "bg-warn/20 text-warn",
+    emerald: "bg-success/20 text-success",
+    violet: "bg-content/20 text-content",
+  }[plan.badgeTone];
+
+  return (
+    <div className={cn("rounded-xl border p-5", tone)}>
+      <div className="mb-2 inline-flex items-center gap-2">
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+            pillTone,
+          )}
+        >
+          {plan.badge}
+        </span>
+      </div>
+      <div className="text-[15px] font-semibold tracking-tight text-foreground">
+        {plan.title}
+      </div>
+      <div className="mt-1 text-[13px] leading-snug text-muted-foreground">
+        {plan.sub}
+      </div>
+    </div>
+  );
+}
+
+
+function PlanPreview({
+  name,
+  price,
+  features,
+  highlight,
+}: {
+  name: string;
+  price: string;
+  features: string[];
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border p-4 transition",
+        highlight
+          ? "border-primary/40 bg-primary/[0.05]"
+          : "border-border bg-card/40",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[14px] font-semibold tracking-tight">
+          {name}
+        </div>
+        {highlight && (
+          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+            Популярный
+          </span>
+        )}
+      </div>
+      <div className="mt-1 text-[20px] font-semibold tracking-tight text-foreground">
+        {price}
+        <span className="ml-1 text-[12px] font-normal text-muted-foreground">
+          /мес
+        </span>
+      </div>
+      <ul className="mt-3 space-y-1 text-[12px] text-muted-foreground">
+        {features.map((f) => (
+          <li key={f} className="flex items-start gap-1.5">
+            <span className="text-primary/70">·</span>
+            <span>{f}</span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        disabled
+        className="mt-4 w-full cursor-not-allowed rounded-md border border-border bg-background/40 px-3 py-1.5 text-[12px] font-medium text-muted-foreground opacity-70"
+        title="Появится в ближайшем апдейте"
+      >
+        Скоро через Т-Банк
+      </button>
     </div>
   );
 }
@@ -287,7 +527,7 @@ function AppearanceSection() {
           fontSize: 12.5,
           color: "var(--text-tertiary)",
           padding: 14,
-          background: "rgba(255,255,255,0.025)",
+          background: "rgb(var(--ink-rgb) / 0.025)",
           border: "1px solid var(--border-subtle)",
           borderRadius: 12,
         }}
@@ -306,13 +546,13 @@ function ShortcutsSection() {
         style={{ marginBottom: 24 }}
       >
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white/5 text-muted-foreground">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
             <Chrome size={16} />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <div className="text-[14px] font-medium">{t.extension.title}</div>
-              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">
                 {t.extension.soon}
               </span>
             </div>

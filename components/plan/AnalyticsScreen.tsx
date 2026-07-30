@@ -164,7 +164,7 @@ export function AnalyticsScreen() {
             {stats.top_posts.slice(0, 3).map((p, i) => (
               <li
                 key={p.id}
-                className="rounded-md border border-white/5 bg-black/20 p-2"
+                className="rounded-md border border-border/60 bg-muted p-2"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] tabular-nums text-[color:var(--text-muted)]">
@@ -211,7 +211,7 @@ function Card({
       <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)]">
         <span>{title}</span>
         {hint && (
-          <span className="text-amber-300/80 normal-case tracking-normal">
+          <span className="text-warn/80 normal-case tracking-normal">
             {hint}
           </span>
         )}
@@ -259,7 +259,7 @@ function Bar({
           )}
         </span>
       </div>
-      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.05]">
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.05]">
         <div
           className="h-full bg-primary/70"
           style={{ width: `${pct}%` }}
@@ -316,8 +316,8 @@ function StreakStrip({
                 filled
                   ? "bg-primary"
                   : loading
-                    ? "bg-white/[0.08]"
-                    : "bg-white/[0.05]",
+                    ? "bg-foreground/[0.08]"
+                    : "bg-foreground/[0.05]",
               )}
             />
           );

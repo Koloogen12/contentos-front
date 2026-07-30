@@ -50,6 +50,24 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Семантические цвета дизайн-системы. Смысл закреплён за цветом во
+        // всём продукте (см. шапку globals.css): источник — info, действие и
+        // извлечение — accent, готовый контент — content, завершено —
+        // success, требует внимания — warn.
+        //
+        // Объявлены через каналы RGB, а не через var(--p-teal): только так
+        // работают модификаторы прозрачности (bg-warn/30). Раньше вместо них
+        // стояли палитровые классы Tailwind (amber-400, emerald-500, sky-400),
+        // которые не знают про тему и в светлой выглядели чужеродно.
+        accent2: "rgb(var(--or-rgb) / <alpha-value>)",
+        info: "rgb(var(--teal-rgb) / <alpha-value>)",
+        content: "rgb(var(--violet-rgb) / <alpha-value>)",
+        success: "rgb(var(--green-rgb) / <alpha-value>)",
+        warn: "rgb(var(--amber-rgb) / <alpha-value>)",
+        ink: "rgb(var(--ink-rgb) / <alpha-value>)",
+        paper: "rgb(var(--paper-rgb) / <alpha-value>)",
+        surface: "rgb(var(--card-rgb) / <alpha-value>)",
+
         // Prototype canvas tokens (1:1 from THE CONTENT-2/styles.css)
         canvas: {
           bg: "var(--canvas-bg)",
@@ -71,7 +89,11 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
+        // Onest — гарнитура дизайн-системы (см. app/layout.tsx, next/font).
+        // Задана именно здесь, а не только в globals.css: на <body> висит
+        // утилита font-sans, а утилиты перебивают правила из @layer base.
         sans: [
+          "var(--font-onest)",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",

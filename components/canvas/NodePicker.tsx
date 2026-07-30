@@ -14,6 +14,7 @@
 
 import * as React from "react";
 import {
+  Bot,
   FileAudio,
   Link as LinkIcon,
   PenLine,
@@ -42,13 +43,25 @@ export type NodePickerMode =
 
 interface NodePickerProps {
   mode: NodePickerMode;
+  /**
+   * When set, only items whose `type` is in this list are shown. Used by
+   * the handle-drag flow: dragging from a source handle should only let
+   * the user pick extract/format (you can't make a source a source's
+   * downstream).
+   */
+  allowedTypes?: NodeType[];
   onPick: (item: NodePickerItem) => void;
   onClose: () => void;
 }
 
 const PICKER_W = 280;
 
-export function NodePicker({ mode, onPick, onClose }: NodePickerProps) {
+export function NodePicker({
+  mode,
+  allowedTypes,
+  onPick,
+  onClose,
+}: NodePickerProps) {
   const [q, setQ] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -109,13 +122,22 @@ export function NodePicker({ mode, onPick, onClose }: NodePickerProps) {
       Icon: PenLine,
       type: "format",
     },
+    {
+      k: "llm",
+      label: t.picker.items.llm.label,
+      desc: t.picker.items.llm.desc,
+      iconCls: "llm",
+      Icon: Bot,
+      type: "llm",
+    },
   ];
 
-  const filtered = items.filter(
-    (it) =>
-      !q ||
-      (it.label + " " + it.desc).toLowerCase().includes(q.toLowerCase()),
-  );
+  const filtered = items.filter((it) => {
+    if (allowedTypes && !allowedTypes.includes(it.type)) return false;
+    return (
+      !q || (it.label + " " + it.desc).toLowerCase().includes(q.toLowerCase())
+    );
+  });
 
   const positionStyle: React.CSSProperties = React.useMemo(() => {
     if (typeof window === "undefined") {
@@ -171,7 +193,7 @@ export function NodePicker({ mode, onPick, onClose }: NodePickerProps) {
             position: "sticky",
             top: 0,
             zIndex: 1,
-            background: "#1a1c1e",
+            background: "var(--p-card)",
             paddingBottom: 6,
             marginBottom: 0,
           }}

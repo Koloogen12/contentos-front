@@ -65,7 +65,7 @@ export function KnowledgeSidebar({
   canvasProjectId,
 }: KnowledgeSidebarProps) {
   return (
-    <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-border bg-[#0d0f10]">
+    <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-border bg-[color:var(--p-card-2)]">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-primary" />
@@ -418,7 +418,7 @@ function KnowledgeRow({
               {item.type}
             </span>
             {item.viral_score !== null && (
-              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">
+              <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-[9px] font-semibold text-success">
                 {item.viral_score}
               </span>
             )}

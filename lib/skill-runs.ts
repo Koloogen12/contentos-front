@@ -19,6 +19,28 @@ export async function runNode(
   });
 }
 
+/**
+ * Kick off the visual-render pipeline for a carousel format-node.
+ *
+ * The backend creates a SkillRun envelope with `skill="render_carousel"`
+ * — same shape as `/run`, so `subscribeSkillRun` works on the returned id
+ * without any special-casing. When the run completes, the canvas refetch
+ * picks up `node.data.rendered_slides` and the CarouselBody flips from
+ * editable text mode to the rendered-JPEG strip.
+ *
+ * Precondition checks happen server-side (400 if the node isn't a
+ * carousel format-node with slides). The UI should hide the button
+ * when those preconditions aren't met to avoid round-trips.
+ */
+export async function renderNodeVisual(
+  nodeId: string,
+): Promise<SkillRunStartResponse> {
+  return apiFetch<SkillRunStartResponse>(
+    `/api/v1/nodes/${nodeId}/render-visual`,
+    { method: "POST" },
+  );
+}
+
 export async function getSkillRun(skillRunId: string): Promise<SkillRunOut> {
   return apiFetch<SkillRunOut>(`/api/v1/skill-runs/${skillRunId}`);
 }

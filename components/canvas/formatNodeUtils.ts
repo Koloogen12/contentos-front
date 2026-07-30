@@ -15,6 +15,7 @@ import type {
   ArticleSection,
   CanvasDetail,
   CarouselSlide,
+  EdgeOut,
   ExtractNodeData,
   HookEntry,
   NodeOut,
@@ -27,11 +28,16 @@ import type {
  *   - The format node has no incoming edges.
  *   - The incoming edge is from a non-extract (e.g. source) node.
  *   - The extract has no talking_points yet.
+ *
+ * Also returns the matching incoming `edge` so callers can read/update its
+ * `data.tezis_index` (multi-fanout per-edge tezis selection).
  */
 export function findUpstreamExtract(
   canvas: CanvasDetail | undefined,
   formatNodeId: string,
-): { node: NodeOut; data: ExtractNodeData } | undefined {
+):
+  | { node: NodeOut; data: ExtractNodeData; edge: EdgeOut }
+  | undefined {
   if (!canvas) return undefined;
   const incoming = canvas.edges.filter((e) => e.target_node_id === formatNodeId);
   if (incoming.length === 0) return undefined;
@@ -41,7 +47,7 @@ export function findUpstreamExtract(
     const data = (src.data ?? {}) as ExtractNodeData;
     const tps = data.talking_points ?? [];
     if (tps.length === 0) continue;
-    return { node: src, data };
+    return { node: src, data, edge: e };
   }
   return undefined;
 }
@@ -51,11 +57,24 @@ export function findUpstreamExtract(
 export function buildCarouselFullText(
   slides: CarouselSlide[],
   cta: string | undefined,
+  opts?: { summary?: string; commentKeyword?: string | null },
 ): string {
-  const body = slides
-    .map((s, i) => `[Slide ${i + 1}] ${s.title}\n${s.body}`)
-    .join("\n\n");
-  return cta ? `${body}\n\n${cta}` : body;
+  const parts: string[] = [];
+  parts.push(
+    slides
+      .map((s, i) => `[Slide ${i + 1}] ${s.title}\n${s.body}`)
+      .join("\n\n"),
+  );
+  if (opts?.summary?.trim()) {
+    parts.push(`--- caption ---\n${opts.summary.trim()}`);
+  }
+  if (cta?.trim()) parts.push(cta.trim());
+  if (opts?.commentKeyword) {
+    parts.push(
+      `Напиши в комментариях «${opts.commentKeyword}» — пришлю в Direct.`,
+    );
+  }
+  return parts.join("\n\n");
 }
 
 /**

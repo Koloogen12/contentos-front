@@ -7,9 +7,13 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   ArrowRight,
+  Globe,
   Loader2,
+  Mic,
+  Send,
   Sparkles,
   X,
+  Youtube,
 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { getBrandContext, updateBrandContext } from "@/lib/brand-context";
@@ -19,7 +23,14 @@ import {
   listCanvasTemplates,
   listCanvases,
 } from "@/lib/canvases";
-import { bulkCreateVoiceSamples } from "@/lib/voice";
+import {
+  bulkCreateVoiceSamples,
+  importVoiceFromTelegram,
+  importVoiceFromUrls,
+  importVoiceFromYoutube,
+  listVoiceSamples,
+} from "@/lib/voice";
+import type { VoiceImportResult } from "@/lib/types";
 import type { BrandContextData, CanvasOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -548,9 +559,180 @@ function Step3VoiceSamples({
   onBack: () => void;
   onFinish: () => void;
 }) {
+  const samplesQuery = useQuery({
+    queryKey: ["voice-samples"],
+    queryFn: listVoiceSamples,
+  });
+  const sampleCount = samplesQuery.data?.length ?? 0;
+
+  const refresh = () =>
+    samplesQuery.refetch();
+
+  return (
+    <Card>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        Изучи мой голос
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Самый важный шаг. Покажи откуда твой контент — стяну посты сам,
+        проиндексирую, на каждой генерации буду показывать AI как пишешь именно
+        ты. Можно пропустить и добавить позже на странице «Голос».
+      </p>
+
+      <div className="mt-5 flex items-center gap-2 rounded-lg border border-content/30 bg-content/[0.06] px-3 py-2 text-[12.5px] text-content">
+        <Mic size={14} />
+        <span>
+          Загружено образцов: <strong>{sampleCount}</strong>
+          {sampleCount >= 3 ? (
+            <span className="ml-1 text-success">— достаточно для старта</span>
+          ) : (
+            <span className="ml-1 text-muted-foreground">
+              · нужно ≥ 3 для полноценного few-shot
+            </span>
+          )}
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <OnboardingImportCard
+          icon={Send}
+          accent="bg-info/20 text-info"
+          title="Telegram"
+          inputLabel="@канал"
+          placeholder="@durov"
+          run={(value) =>
+            importVoiceFromTelegram({ handle: value, limit: 50 })
+          }
+          onImported={refresh}
+        />
+        <OnboardingImportCard
+          icon={Youtube}
+          accent="bg-destructive/20 text-destructive"
+          title="YouTube"
+          inputLabel="@канал"
+          placeholder="@danil"
+          run={(value) =>
+            importVoiceFromYoutube({ channel: value, limit: 10 })
+          }
+          onImported={refresh}
+        />
+        <OnboardingImportCard
+          icon={Globe}
+          accent="bg-success/20 text-success"
+          title="Блог / статьи"
+          inputLabel="Ссылки через пробел"
+          placeholder="https://..."
+          run={(value) =>
+            importVoiceFromUrls({
+              urls: value
+                .split(/\s+/)
+                .map((u) => u.trim())
+                .filter((u) => u.startsWith("http")),
+            })
+          }
+          onImported={refresh}
+        />
+      </div>
+
+      <details className="mt-4 rounded-lg border border-border/80 bg-foreground/[0.02] p-3">
+        <summary className="cursor-pointer text-[12px] text-foreground/80">
+          Или вставить вручную (несколько постов через <code>---</code>)
+        </summary>
+        <ManualPasteBlock onSaved={refresh} />
+      </details>
+
+      <div className="mt-6 flex items-center justify-between gap-2">
+        <Button type="button" variant="ghost" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" /> Назад
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="ghost" onClick={onFinish}>
+            {sampleCount > 0 ? "Завершить" : t.onboarding.skip}
+          </Button>
+          <Button
+            type="button"
+            onClick={onFinish}
+            disabled={sampleCount < 1}
+          >
+            <Sparkles className="h-4 w-4" /> Перейти на канвас
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function OnboardingImportCard({
+  icon: Icon,
+  accent,
+  title,
+  inputLabel,
+  placeholder,
+  run,
+  onImported,
+}: {
+  icon: React.ElementType;
+  accent: string;
+  title: string;
+  inputLabel: string;
+  placeholder: string;
+  run: (value: string) => Promise<VoiceImportResult>;
+  onImported: () => void;
+}) {
+  const [value, setValue] = React.useState("");
+  const mutation = useMutation({
+    mutationFn: () => run(value.trim()),
+    onSuccess: (r) => {
+      if (r.created > 0) {
+        toast.success(`+${r.created} образцов из ${r.source}`);
+      }
+      for (const n of r.notes) toast.message(n);
+      setValue("");
+      onImported();
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.detail : "Импорт не удался"),
+  });
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/80 bg-foreground/[0.02] p-3">
+      <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-md",
+            accent,
+          )}
+        >
+          <Icon size={14} />
+        </div>
+        <div className="text-[13px] font-semibold">{title}</div>
+      </div>
+      <Label className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
+        {inputLabel}
+      </Label>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={placeholder}
+        disabled={mutation.isPending}
+      />
+      <Button
+        type="button"
+        size="sm"
+        disabled={!value.trim() || mutation.isPending}
+        onClick={() => mutation.mutate()}
+      >
+        {mutation.isPending ? (
+          <Loader2 size={13} className="animate-spin" />
+        ) : null}
+        Импортировать
+      </Button>
+    </div>
+  );
+}
+
+function ManualPasteBlock({ onSaved }: { onSaved: () => void }) {
   const [text, setText] = React.useState("");
   const [platform, setPlatform] = React.useState("telegram");
-
   const mutation = useMutation({
     mutationFn: () => {
       const samples = text
@@ -567,75 +749,41 @@ function Step3VoiceSamples({
       return bulkCreateVoiceSamples(samples);
     },
     onSuccess: (result) => {
-      toast.success(
-        `Created ${result.created} · Skipped ${result.skipped}`,
-      );
-      onFinish();
+      toast.success(`+${result.created} образцов (вручную)`);
+      setText("");
+      onSaved();
     },
     onError: (err) =>
       toast.error(
         err instanceof Error ? err.message : t.onboarding.couldNotSaveSamples,
       ),
   });
-
   return (
-    <Card>
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Обучи свой голос
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Необязательно. Вставь несколько лучших постов (через{" "}
-        <code className="rounded bg-muted/60 px-1 py-0.5 text-[11px]">---</code>
-        ), чтобы AI повторял твой стиль.
-      </p>
-
-      <div className="mt-6 space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="onboarding-platform">Платформа по умолчанию</Label>
-          <Input
-            id="onboarding-platform"
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-            placeholder="telegram"
-            className="max-w-[200px]"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="onboarding-samples">Посты</Label>
-          <Textarea
-            id="onboarding-samples"
-            rows={10}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={`Пост 1\n\n---\n\nПост 2\n\n---\n\nПост 3`}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 flex items-center justify-between gap-2">
-        <Button type="button" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" /> Назад
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" onClick={onFinish}>
-            {t.onboarding.skip}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || text.trim() === ""}
-          >
-            {mutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> {t.common.saving}
-              </>
-            ) : (
-              "Готово"
-            )}
-          </Button>
-        </div>
-      </div>
-    </Card>
+    <div className="mt-3 flex flex-col gap-2">
+      <Input
+        value={platform}
+        onChange={(e) => setPlatform(e.target.value)}
+        placeholder="telegram"
+        className="max-w-[200px]"
+      />
+      <Textarea
+        rows={6}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={`Пост 1\n\n---\n\nПост 2`}
+      />
+      <Button
+        size="sm"
+        className="self-end"
+        disabled={mutation.isPending || text.trim() === ""}
+        onClick={() => mutation.mutate()}
+      >
+        {mutation.isPending ? (
+          <Loader2 size={13} className="animate-spin" />
+        ) : null}
+        Добавить
+      </Button>
+    </div>
   );
 }
 

@@ -268,7 +268,7 @@ function DrawerInner({
             <button
               type="button"
               onClick={onClose}
-              className="ml-auto rounded-md p-1 text-[color:var(--text-muted)] hover:bg-white/5 hover:text-foreground"
+              className="ml-auto rounded-md p-1 text-[color:var(--text-muted)] hover:bg-foreground/5 hover:text-foreground"
               aria-label={t.common.close}
             >
               <X size={16} />

@@ -313,7 +313,7 @@ export function WeeklyCalendar({
                     <>
                       {posts.length > 1 && (
                         <span
-                          className="absolute right-1 top-1 z-10 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
+                          className="absolute right-1 top-1 z-10 rounded-full bg-warn/20 px-1.5 py-0.5 text-[9px] font-semibold text-warn"
                           title={`Конфликт дат · ${posts.length}`}
                         >
                           ·×{posts.length}

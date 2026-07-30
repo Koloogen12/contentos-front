@@ -11,6 +11,7 @@ import {
   publishNode,
   subscribePublishLog,
 } from "@/lib/publish";
+import { getBotInfo } from "@/lib/telegram-targets";
 import type { PublishLogOut, TelegramTargetOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +39,18 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
     queryFn: listTargets,
     enabled: open,
   });
+  // Fetched once per session — we surface the bot's @handle in both the
+  // empty state and the publish-error state so the user always knows what
+  // to add to their channel as admin.
+  const botInfoQuery = useQuery({
+    queryKey: ["telegram-bot-info"],
+    queryFn: getBotInfo,
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
+  const botHandle = botInfoQuery.data?.username
+    ? `@${botInfoQuery.data.username}`
+    : null;
 
   const targets = targetsQuery.data ?? [];
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -107,6 +120,24 @@ export function PublishDialog({ nodeId, open, onOpenChange }: PublishDialogProps
           <DialogTitle>{t.publish.title}</DialogTitle>
           <DialogDescription>{t.publish.sub}</DialogDescription>
         </DialogHeader>
+
+        {/* Always-visible "add the bot as admin" reminder. The most common
+            failure mode is the user creating a target with the right chat_id
+            but forgetting to add our bot to the channel — surfacing the
+            handle every time keeps the action obvious. */}
+        {botHandle && targets.length > 0 && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-info/20 bg-info/[0.05] px-3 py-2 text-[12px] text-info/90">
+            <Send className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
+            <span>
+              Бот{" "}
+              <code className="rounded bg-foreground/5 px-1 font-mono text-info">
+                {botHandle}
+              </code>{" "}
+              должен быть админом канала с правом «Публикация сообщений».
+              Если ошибка «chat not found» — добавь его и попробуй снова.
+            </span>
+          </div>
+        )}
 
         {targetsQuery.isPending ? (
           <div className="space-y-2">
@@ -255,7 +286,7 @@ function PublishResult({ log }: { log: PublishLogOut }) {
       className={cn(
         "rounded-md border px-4 py-3 text-sm",
         sent
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+          ? "border-success/40 bg-success/10 text-success"
           : "border-destructive/40 bg-destructive/10 text-destructive",
       )}
     >
@@ -270,7 +301,7 @@ function PublishResult({ log }: { log: PublishLogOut }) {
             {sent ? t.publish.sent : t.publish.failed}
           </div>
           {sent ? (
-            <p className="mt-1 text-xs text-emerald-200/80">
+            <p className="mt-1 text-xs text-success/80">
               {log.message_id
                 ? t.publish.sentMessage(log.message_id)
                 : t.publish.sentDelivered}

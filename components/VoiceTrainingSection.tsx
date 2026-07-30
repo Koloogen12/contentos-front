@@ -513,7 +513,7 @@ function EmbeddingPill({ ready }: { ready: boolean }) {
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
         ready
-          ? "bg-emerald-500/15 text-emerald-300"
+          ? "bg-success/15 text-success"
           : "bg-muted/60 text-muted-foreground",
       )}
       title={ready ? "Эмбеддинг готов" : "Эмбеддинг считается"}
@@ -521,7 +521,7 @@ function EmbeddingPill({ ready }: { ready: boolean }) {
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          ready ? "bg-emerald-400" : "bg-muted-foreground/60",
+          ready ? "bg-success" : "bg-muted-foreground/60",
         )}
       />
       {ready ? t.voice.ready : t.voice.pending}
@@ -667,7 +667,7 @@ function ExtractedTraitsPanel({
   return (
     <div className="space-y-5 rounded-xl border border-border bg-background/40 p-4">
       {showFreshBanner && (
-        <div className="flex items-center gap-2 text-xs text-emerald-300">
+        <div className="flex items-center gap-2 text-xs text-success">
           <Sparkles className="h-3.5 w-3.5" />
           Проанализировано образцов: {data.samples_analyzed}.
         </div>

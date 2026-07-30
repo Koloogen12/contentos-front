@@ -15,16 +15,20 @@ import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
+  BookOpen,
   Copy,
+  Eye,
   FileText,
   Film,
   Hash,
   Image as ImageIcon,
   LayoutGrid,
   Loader2,
+  Maximize2,
   Mic,
   Newspaper,
   PenLine,
+  Pencil,
   Play,
   RefreshCcw,
   RefreshCw,
@@ -37,6 +41,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
+import { renderNodeVisual } from "@/lib/skill-runs";
 import { tweakNode, type FormatTweakMode } from "@/lib/tweaks";
 import type {
   ArticleSection,
@@ -47,6 +52,7 @@ import type {
   HookEntry,
   NodeOut,
   ReelsBeat,
+  RenderedCarouselResult,
 } from "@/lib/types";
 import { useCanvasNodeContext } from "@/components/canvas/canvasContext";
 import { EditableText } from "@/components/canvas/EditableText";
@@ -59,9 +65,14 @@ import {
   buildTwitterFullText,
   findUpstreamExtract,
 } from "@/components/canvas/formatNodeUtils";
+import { updateEdge } from "@/lib/edges";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { PublishDialog } from "@/components/canvas/PublishDialog";
+import { RenderedSlidesStrip } from "@/components/canvas/RenderedSlidesStrip";
+import { TelegramMetricsChip } from "@/components/canvas/TelegramMetricsChip";
+import { CanvasFormatDrawer } from "@/components/canvas/CanvasFormatDrawer";
+import { TelegramPreview } from "@/components/canvas/TelegramPreview";
 import { SchedulePickerDialog } from "@/components/plan/SchedulePickerDialog";
 import {
   setScheduledBadge,
@@ -88,9 +99,12 @@ const PLATFORM_LIST: ReadonlyArray<{
   { k: "reels", label: "Reels", Icon: Film },
   { k: "hooks", label: "Hooks", Icon: Hash },
   { k: "article", label: "Статья", Icon: Newspaper },
+  // Единственный формат, который берёт весь материал целиком.
+  { k: "review", label: "Рецензия", Icon: BookOpen },
 ];
 
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
+  review: "Рецензия",
   telegram: "Telegram",
   linkedin: "LinkedIn",
   twitter: "X / Twitter",
@@ -123,9 +137,12 @@ export function FormatNode({ data, selected }: NodeProps) {
   const selectedHook = format.selected_hook_index ?? 0;
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [scheduleOpen, setScheduleOpen] = React.useState(false);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   const scheduledDate = useScheduledBadge(node.id);
 
   const articleSections = format.sections ?? [];
+  // У рецензии те же sections, но с points вместо body — см. review_creator.
+  const reviewSections = platform === "review" ? (format.sections ?? []) : [];
   const tweets = format.tweets ?? [];
   const formatType: "single" | "thread" = format.format_type ?? "thread";
 
@@ -150,12 +167,32 @@ export function FormatNode({ data, selected }: NodeProps) {
     if (readOnly) return;
     if (i === format.source_talking_point_index) return;
     await updateNodeData(node.id, { source_talking_point_index: i });
+    // Multi-fanout: when this format node was spawned via the per-tezis
+    // button on ExtractNode, its incoming edge carries `tezis_index` and
+    // the worker uses THAT (not the parent's `selected_index`). Keep the
+    // edge in sync with the in-node picker so changing the picker actually
+    // changes which tezis the next run consumes. Silently no-op for legacy
+    // edges where edge.data is empty {} — backend falls back to the
+    // parent's `selected_index` (kludge already handles patching that).
+    if (upstream?.edge) {
+      const edge = upstream.edge;
+      const cur = (edge.data ?? {}) as Record<string, unknown>;
+      if (typeof cur.tezis_index === "number" && cur.tezis_index !== i) {
+        try {
+          await updateEdge(edge.id, { ...cur, tezis_index: i });
+        } catch {
+          // Non-fatal — kludge keeps the run aligned via parent's
+          // selected_index. We log via toast only if everything fails.
+        }
+      }
+    }
   };
   const hasOutput = React.useMemo(() => {
     if (platform === "carousel") return slides.length > 0;
     if (platform === "reels") return beats.length > 0 || hooks.length > 0;
     if (platform === "hooks") return hooksBank.length > 0;
     if (platform === "article") return articleSections.length > 0;
+    if (platform === "review") return reviewSections.length > 0;
     if (platform === "twitter") return tweets.length > 0;
     if (platform === "instagram")
       return Boolean(format.caption || format.body || format.hook);
@@ -231,6 +268,28 @@ export function FormatNode({ data, selected }: NodeProps) {
     [ensureParentSelectedThen, tweakMutation],
   );
 
+  // ---- Visual render (carousel only) ----
+  // Independent mutation from tweak/run because: (a) it has its own
+  // server route, (b) progress UI is different ("Рендерю обложку..."
+  // takes ~90s, so we treat it as a distinct in-progress state),
+  // (c) it doesn't affect the parent extract's `selected_index` so we
+  // skip `ensureParentSelectedThen`.
+  const renderVisualMutation = useMutation({
+    mutationFn: () => renderNodeVisual(node.id),
+    onSuccess: ({ skill_run_id }) => {
+      attachSkillRun(node.id, skill_run_id);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.detail
+          : "Не удалось запустить рендер визуала",
+      ),
+  });
+  const handleRenderVisual = React.useCallback(() => {
+    renderVisualMutation.mutate();
+  }, [renderVisualMutation]);
+
   const setPlatform = async (p: FormatPlatform) => {
     if (readOnly) return;
     if (p === platform) return;
@@ -297,6 +356,24 @@ export function FormatNode({ data, selected }: NodeProps) {
             Тезис {effectiveIdeaIdx + 1}
           </span>
         )}
+
+        {/* Maximize / open in drawer — full-size read+edit surface for the
+            assembled post. Sized 380px nodes can't display long Telegram /
+            LinkedIn / Article output without clipping; the drawer gives a
+            720px-wide editor with all the tweaks/copy/publish actions. */}
+        <button
+          type="button"
+          className="co-node-maximize-btn nodrag"
+          onClick={(e) => {
+            e.stopPropagation();
+            setDrawerOpen(true);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="Развернуть"
+          aria-label="Развернуть"
+        >
+          <Maximize2 size={11} />
+        </button>
 
         {/* Scheduled badge — set client-side after a successful POST to
              /nodes/{id}/schedule. Persisted in localStorage. */}
@@ -414,7 +491,7 @@ export function FormatNode({ data, selected }: NodeProps) {
           {status === "error" && !hasOutput && (
             <div
               className="co-placeholder-empty"
-              style={{ borderColor: "rgba(239,68,68,0.3)", color: "#fca5a5" }}
+              style={{ borderColor: "rgba(239,68,68,0.3)", color: "var(--p-red, #DC2626)" }}
             >
               <AlertCircle size={13} />
               <span>{t.format.error}</span>
@@ -429,17 +506,42 @@ export function FormatNode({ data, selected }: NodeProps) {
                   truth for outputs. */}
               {platform === "carousel" ? (
                 <CarouselBody
+                  nodeId={node.id}
                   slides={slides}
                   summary={format.summary}
                   cta={format.cta}
+                  commentKeyword={format.comment_keyword ?? null}
+                  coverVariants={format.cover_variants ?? []}
+                  renderedSlides={format.rendered_slides}
+                  isRendering={running || renderVisualMutation.isPending}
+                  onRenderVisual={
+                    readOnly || slides.length === 0
+                      ? undefined
+                      : handleRenderVisual
+                  }
                   readOnly={!!readOnly}
+                  onApplyCover={(variant) => {
+                    if (slides.length === 0) return;
+                    const next = [...slides];
+                    next[0] = { ...variant, is_cover: true };
+                    void updateNodeData(node.id, {
+                      slides: next,
+                      full_text: buildCarouselFullText(next, format.cta, {
+                        summary: format.summary,
+                        commentKeyword: format.comment_keyword ?? null,
+                      }),
+                    });
+                  }}
                   onUpdateSlide={(i, patch) => {
                     const next = slides.map((s, idx) =>
                       idx === i ? { ...s, ...patch } : s,
                     );
                     void updateNodeData(node.id, {
                       slides: next,
-                      full_text: buildCarouselFullText(next, format.cta),
+                      full_text: buildCarouselFullText(next, format.cta, {
+                        summary: format.summary,
+                        commentKeyword: format.comment_keyword ?? null,
+                      }),
                     });
                   }}
                 />
@@ -535,6 +637,8 @@ export function FormatNode({ data, selected }: NodeProps) {
                     void updateNodeData(node.id, next);
                   }}
                 />
+              ) : platform === "review" ? (
+                <ReviewBody format={format} />
               ) : platform === "article" ? (
                 <ArticleBody
                   title={format.title ?? ""}
@@ -584,6 +688,7 @@ export function FormatNode({ data, selected }: NodeProps) {
                   onSelectHook={setHook}
                   body={format.body ?? ""}
                   cta={format.cta ?? ""}
+                  platform={platform}
                   onUpdateBody={(v) => {
                     void updateNodeData(node.id, {
                       body: v,
@@ -686,6 +791,15 @@ export function FormatNode({ data, selected }: NodeProps) {
                 </button>
               )}
 
+              {/* Telegram metrics chip — shown only when this node has at
+                  least one sent publish_log. Self-fetches via TanStack Query
+                  on mount, no props beyond nodeId needed. Hidden in
+                  readOnly mode (shared/preview canvas) — viewing other
+                  people's view counts adds noise. */}
+              {!readOnly && platform === "telegram" && (
+                <TelegramMetricsChip nodeId={node.id} />
+              )}
+
               {!readOnly && format.full_text && (
                 <button
                   type="button"
@@ -730,6 +844,12 @@ export function FormatNode({ data, selected }: NodeProps) {
           }}
         />
       )}
+
+      <CanvasFormatDrawer
+        node={node}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
   );
 }
@@ -777,6 +897,7 @@ function PostBody({
   cta,
   onUpdateBody,
   onUpdateCta,
+  platform,
   readOnly,
 }: {
   hooks: string[];
@@ -786,12 +907,37 @@ function PostBody({
   cta: string;
   onUpdateBody: (v: string) => void;
   onUpdateCta: (v: string) => void;
+  platform: FormatPlatform;
   readOnly: boolean;
 }) {
   const [bodyDraft, setBodyDraft] = React.useState(body);
   const [ctaDraft, setCtaDraft] = React.useState(cta);
   React.useEffect(() => setBodyDraft(body), [body]);
   React.useEffect(() => setCtaDraft(cta), [cta]);
+
+  // Preview is meaningful only for platforms that publish with HTML
+  // formatting. Telegram sends parse_mode=HTML; the others ship plain text
+  // (LinkedIn / Twitter / Instagram have no inline-rich-text API), so for
+  // them we just keep the existing edit-only view.
+  const supportsPreview = platform === "telegram";
+  // Default to preview when there's already AI-generated body. Empty state
+  // (no body yet) shows the editor so the user can type into the textarea
+  // without an extra click.
+  const [mode, setMode] = React.useState<"preview" | "edit">(() =>
+    supportsPreview && body.trim() ? "preview" : "edit",
+  );
+  // If the platform changes mid-life (user toggled tab) reset to the
+  // sensible default. Body changes don't reset mode — the user is
+  // typically iterating between Edit → Preview while writing.
+  React.useEffect(() => {
+    setMode(supportsPreview && body.trim() ? "preview" : "edit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform]);
+
+  const previewFullText = [hooks[selectedHook] ?? "", body, cta]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n\n");
 
   return (
     <>
@@ -815,7 +961,18 @@ function PostBody({
                 disabled={readOnly}
               >
                 <span className="co-hook-radio-dot" />
-                <span className="co-hook-radio-text">{h}</span>
+                {/* In preview, render Telegram markup inside the hook
+                    radio label so the user sees the same visual cue as
+                    in the body. The Spoiler / link click-handlers inside
+                    are no-ops here (we stop-propagation), so clicking
+                    the row still selects the hook. */}
+                <span className="co-hook-radio-text">
+                  {supportsPreview && mode === "preview" ? (
+                    <TelegramPreview text={h} className="text-[12.5px]" />
+                  ) : (
+                    h
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -823,71 +980,215 @@ function PostBody({
       )}
 
       <div>
-        <div className="co-field-label">{t.format.bodyLabel}</div>
-        <textarea
-          className="co-content-textarea nodrag"
-          value={bodyDraft}
-          onChange={(e) => setBodyDraft(e.target.value)}
-          onBlur={() => {
-            if (bodyDraft !== body) onUpdateBody(bodyDraft);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          rows={8}
-          disabled={readOnly}
-        />
+        <div className="flex items-center justify-between">
+          <div className="co-field-label">{t.format.bodyLabel}</div>
+          {supportsPreview && (
+            <div
+              className="nodrag inline-flex items-center gap-0.5 rounded-md border border-border bg-foreground/[0.03] p-0.5 text-[10.5px]"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition",
+                  mode === "preview"
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMode("preview");
+                }}
+                title="Превью как в Telegram"
+              >
+                <Eye size={10} />
+                Превью
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition",
+                  mode === "edit"
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMode("edit");
+                }}
+                title="Редактировать сырой HTML"
+              >
+                <Pencil size={10} />
+                Редактировать
+              </button>
+            </div>
+          )}
+        </div>
+        {supportsPreview && mode === "preview" ? (
+          <div
+            className="nodrag rounded-md border border-border/80 bg-foreground/[0.02] p-3"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {previewFullText.trim() ? (
+              <TelegramPreview text={previewFullText} />
+            ) : (
+              <div className="text-[12px] text-muted-foreground">
+                Пост пуст — переключись на «Редактировать», чтобы добавить
+                текст.
+              </div>
+            )}
+          </div>
+        ) : (
+          <textarea
+            className="co-content-textarea nodrag"
+            value={bodyDraft}
+            onChange={(e) => setBodyDraft(e.target.value)}
+            onBlur={() => {
+              if (bodyDraft !== body) onUpdateBody(bodyDraft);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            rows={8}
+            disabled={readOnly}
+          />
+        )}
       </div>
 
-      <div>
-        <div className="co-field-label">{t.format.ctaLabel}</div>
-        <input
-          type="text"
-          className="co-field-input nodrag"
-          value={ctaDraft}
-          onChange={(e) => setCtaDraft(e.target.value)}
-          onBlur={() => {
-            if (ctaDraft !== cta) onUpdateCta(ctaDraft);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          disabled={readOnly}
-        />
-      </div>
+      {/* CTA is hidden when previewing (it's already inside the preview),
+          shown as a normal field in edit mode so the user can tweak. */}
+      {!(supportsPreview && mode === "preview") && (
+        <div>
+          <div className="co-field-label">{t.format.ctaLabel}</div>
+          <input
+            type="text"
+            className="co-field-input nodrag"
+            value={ctaDraft}
+            onChange={(e) => setCtaDraft(e.target.value)}
+            onBlur={() => {
+              if (ctaDraft !== cta) onUpdateCta(ctaDraft);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            disabled={readOnly}
+          />
+        </div>
+      )}
     </>
   );
 }
 
 function CarouselBody({
+  nodeId,
   slides,
   summary,
   cta,
+  commentKeyword,
+  coverVariants,
+  renderedSlides,
+  isRendering,
+  onRenderVisual,
   readOnly,
   onUpdateSlide,
+  onApplyCover,
 }: {
+  nodeId: string;
   slides: CarouselSlide[];
   summary?: string;
   cta?: string;
+  commentKeyword?: string | null;
+  coverVariants?: CarouselSlide[];
+  renderedSlides?: RenderedCarouselResult;
+  isRendering?: boolean;
+  onRenderVisual?: () => void;
   readOnly: boolean;
   onUpdateSlide: (i: number, patch: Partial<CarouselSlide>) => void;
+  onApplyCover?: (variant: CarouselSlide) => void;
 }) {
+  const currentCoverTitle = slides[0]?.title ?? "";
+  const altCovers = (coverVariants ?? []).filter(
+    (v) => v.title && v.title !== currentCoverTitle,
+  );
+  const hasRendered = Boolean(renderedSlides?.slides?.length);
   return (
     <div className="flex flex-col gap-1.5">
+      {/* Visual render strip — shown when JPEGs exist. We always keep the
+          editable text slides below so the user can tweak then re-render. */}
+      {hasRendered && renderedSlides && (
+        <RenderedSlidesStrip nodeId={nodeId} rendered={renderedSlides} />
+      )}
+
+      {/* Render action — always rendered (above text slides) so the button
+          stays in the same place whether or not there are rendered slides. */}
+      {onRenderVisual && (
+        <button
+          type="button"
+          className="nodrag inline-flex items-center justify-center gap-1.5 rounded-md border border-warn/40 bg-warn/[0.08] px-2 py-1.5 text-[11px] font-medium text-warn hover:border-warn/70 hover:bg-warn/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onRenderVisual}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={isRendering}
+          title={
+            hasRendered
+              ? "Сгенерировать новый визуал с текущими слайдами"
+              : "Собрать карусель в картинки (AI-обложка + HTML-слайды)"
+          }
+        >
+          {isRendering ? (
+            <>
+              <Loader2 size={11} className="animate-spin" />
+              Рендерю…
+            </>
+          ) : (
+            <>
+              <ImageIcon size={11} />
+              {hasRendered
+                ? "Перегенерировать визуал"
+                : "Сгенерировать визуал"}
+            </>
+          )}
+        </button>
+      )}
+
+      {altCovers.length > 0 && onApplyCover && !readOnly && (
+        <div className="rounded-md border border-content/30 bg-content/[0.06] p-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-content">
+            Альтернативные обложки
+          </div>
+          <div className="flex flex-col gap-1">
+            {altCovers.map((v, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onApplyCover(v)}
+                className="rounded border border-border/80 bg-foreground/5 px-2 py-1.5 text-left text-[11px] leading-snug text-foreground hover:border-content/60 hover:bg-content/10 nodrag"
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Применить как обложку"
+              >
+                <div className="font-medium text-foreground">{v.title}</div>
+                {v.body && (
+                  <div className="text-[10.5px] text-muted-foreground">{v.body}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {slides.map((s, i) => (
         <div
           key={i}
-          className="rounded-md border border-white/5 bg-black/30 p-2"
+          className="rounded-md border border-border/60 bg-muted p-2"
         >
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white/15 text-[9px] font-semibold">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground/15 text-[9px] font-semibold">
               {i + 1}
             </span>
             <EditableText
               value={s.title}
               disabled={readOnly}
               onSave={(v) => onUpdateSlide(i, { title: v })}
-              className="text-[11px] font-medium text-zinc-100 flex-1"
+              className="text-[11px] font-medium text-foreground flex-1"
               ariaLabel={`Заголовок слайда ${i + 1}`}
             />
             {s.is_cover && (
-              <span className="ml-auto text-[9px] uppercase tracking-wide text-amber-300">
+              <span className="ml-auto text-[9px] uppercase tracking-wide text-warn">
                 Обложка
               </span>
             )}
@@ -898,19 +1199,37 @@ function CarouselBody({
             onSave={(v) => onUpdateSlide(i, { body: v })}
             multiline
             rows={3}
-            className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-zinc-300 block w-full"
+            className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-foreground/80 block w-full"
             ariaLabel={`Текст слайда ${i + 1}`}
           />
         </div>
       ))}
       {summary && (
-        <div className="text-[12px] text-[color:var(--text-tertiary)]">
+        <div className="rounded-md border border-border/60 bg-muted p-2 text-[11px] leading-snug text-[color:var(--text-tertiary)]">
+          <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1">
+            Caption под постом
+          </div>
           {summary}
         </div>
       )}
       {cta && (
         <div className="text-[11px] text-[color:var(--text-secondary)]">
           <span className="text-[color:var(--text-muted)]">CTA:</span> {cta}
+        </div>
+      )}
+      {commentKeyword && (
+        <div
+          className="rounded-md border px-2 py-1.5 text-[11px] leading-snug"
+          style={{
+            borderColor: "rgba(34, 197, 94, 0.4)",
+            background: "rgba(34, 197, 94, 0.08)",
+            color: "var(--p-green)",
+          }}
+        >
+          <span className="text-[9px] uppercase tracking-wider opacity-70">
+            Кодовое слово в комменты →
+          </span>{" "}
+          <span className="font-mono font-semibold">«{commentKeyword}»</span>
         </div>
       )}
     </div>
@@ -974,9 +1293,9 @@ function ReelsBody({
             {beats.map((b, i) => (
               <li
                 key={i}
-                className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200"
+                className="rounded-md border border-border/60 bg-muted p-2 text-[11px] leading-snug text-foreground"
               >
-                <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   #{i + 1} · ~{b.duration_sec}s
                 </div>
                 <EditableText
@@ -995,7 +1314,7 @@ function ReelsBody({
                   multiline
                   rows={2}
                   placeholder="visual…"
-                  className="mt-1 italic text-zinc-400 block w-full"
+                  className="mt-1 italic text-muted-foreground block w-full"
                   ariaLabel={`Визуал бита ${i + 1}`}
                 />
               </li>
@@ -1014,7 +1333,7 @@ function ReelsBody({
             multiline
             rows={3}
             placeholder="Подпись…"
-            className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+            className="rounded-md border border-border/60 bg-muted p-2 text-[11px] leading-snug text-foreground whitespace-pre-wrap block w-full"
             ariaLabel="Подпись (caption)"
           />
         </div>
@@ -1063,12 +1382,12 @@ function ArticleBody({
   onUpdateSection: (i: number, patch: Partial<ArticleSection>) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 text-zinc-200">
+    <div className="flex flex-col gap-2 text-foreground">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Статья
         </span>
-        <span className="text-[10px] tabular-nums text-zinc-500">
+        <span className="text-[10px] tabular-nums text-muted-foreground">
           {wordCount} слов
         </span>
       </div>
@@ -1077,7 +1396,7 @@ function ArticleBody({
         disabled={readOnly}
         onSave={(v) => onUpdateField("title", v)}
         placeholder="Заголовок статьи…"
-        className="text-[14px] font-semibold leading-snug text-zinc-50 block w-full"
+        className="text-[14px] font-semibold leading-snug text-foreground block w-full"
         ariaLabel="Заголовок статьи"
       />
       <EditableText
@@ -1087,7 +1406,7 @@ function ArticleBody({
         multiline
         rows={2}
         placeholder="Хук…"
-        className="text-[11px] italic leading-snug text-zinc-300 block w-full"
+        className="text-[11px] italic leading-snug text-foreground/80 block w-full"
         ariaLabel="Хук"
       />
       <EditableText
@@ -1097,23 +1416,23 @@ function ArticleBody({
         multiline
         rows={3}
         placeholder="Вступление…"
-        className="text-[11px] leading-relaxed text-zinc-300 block w-full"
+        className="text-[11px] leading-relaxed text-foreground/80 block w-full"
         ariaLabel="Вступление"
       />
-      <div className="rounded-md border border-white/5 bg-black/30 p-2">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+      <div className="rounded-md border border-border/60 bg-muted p-2">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
           {sections.length} {sections.length === 1 ? "секция" : "секций"}
         </div>
         <ul className="flex flex-col gap-2">
           {sections.map((s, i) => (
             <li key={i} className="flex flex-col gap-1">
               <div className="flex items-baseline gap-1.5">
-                <span className="text-zinc-500 tabular-nums">{i + 1}.</span>
+                <span className="text-muted-foreground tabular-nums">{i + 1}.</span>
                 <EditableText
                   value={s.heading}
                   disabled={readOnly}
                   onSave={(v) => onUpdateSection(i, { heading: v })}
-                  className="text-[11px] font-medium leading-snug text-zinc-200 flex-1"
+                  className="text-[11px] font-medium leading-snug text-foreground flex-1"
                   ariaLabel={`Заголовок секции ${i + 1}`}
                 />
               </div>
@@ -1124,7 +1443,7 @@ function ArticleBody({
                 multiline
                 rows={3}
                 placeholder="Текст секции…"
-                className="text-[11px] leading-snug text-zinc-300 block w-full"
+                className="text-[11px] leading-snug text-foreground/80 block w-full"
                 ariaLabel={`Текст секции ${i + 1}`}
               />
             </li>
@@ -1138,7 +1457,7 @@ function ArticleBody({
         multiline
         rows={2}
         placeholder="Итог…"
-        className="text-[11px] leading-relaxed text-zinc-400 block w-full"
+        className="text-[11px] leading-relaxed text-muted-foreground block w-full"
         ariaLabel="Итог"
       />
       <EditableText
@@ -1148,11 +1467,11 @@ function ArticleBody({
         multiline
         rows={2}
         placeholder="CTA…"
-        className="rounded-md border border-indigo-400/20 bg-indigo-400/5 p-1.5 text-[11px] leading-snug text-indigo-200 block w-full"
+        className="rounded-md border border-content/20 bg-content/5 p-1.5 text-[11px] leading-snug text-content block w-full"
         ariaLabel="CTA"
       />
-      <div className="text-[10px] leading-snug text-zinc-500">
-        <span className="font-semibold text-zinc-400">SEO: </span>
+      <div className="text-[10px] leading-snug text-muted-foreground">
+        <span className="font-semibold text-muted-foreground">SEO: </span>
         <EditableText
           value={meta}
           disabled={readOnly}
@@ -1160,7 +1479,7 @@ function ArticleBody({
           multiline
           rows={2}
           placeholder="meta description…"
-          className="text-zinc-500"
+          className="text-muted-foreground"
           ariaLabel="SEO meta description"
         />
       </div>
@@ -1182,10 +1501,10 @@ function HooksBankBody({
       {hooks.map((h, i) => (
         <li
           key={i}
-          className="rounded-md border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-zinc-200"
+          className="rounded-md border border-border/60 bg-muted p-2 text-[11px] leading-snug text-foreground"
         >
           <div className="flex items-start gap-2">
-            <span className="text-[10px] font-semibold tabular-nums text-zinc-500 mt-0.5">
+            <span className="text-[10px] font-semibold tabular-nums text-muted-foreground mt-0.5">
               {i + 1}.
             </span>
             <EditableText
@@ -1198,7 +1517,7 @@ function HooksBankBody({
               ariaLabel={`Хук ${i + 1}`}
             />
             {/* Trigger pill stays read-only per spec — typed enum, not free text. */}
-            <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300">
+            <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-foreground/80">
               {h.trigger}
             </span>
           </div>
@@ -1225,7 +1544,7 @@ function TwitterBody({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           {formatType === "thread" ? t.format.twitterThread : t.format.twitterSingle}
         </span>
         {!readOnly && (
@@ -1260,16 +1579,16 @@ function TwitterBody({
         )}
       </div>
       {tweets.length === 0 ? (
-        <div className="text-[11px] text-zinc-500">—</div>
+        <div className="text-[11px] text-muted-foreground">—</div>
       ) : formatType === "single" ? (
-        <div className="rounded-md border border-white/5 bg-black/30 p-2">
+        <div className="rounded-md border border-border/60 bg-muted p-2">
           <EditableText
             value={tweets[0] ?? ""}
             disabled={readOnly}
             onSave={(v) => onUpdateTweet(0, v)}
             multiline
             rows={6}
-            className="text-[12px] leading-snug text-zinc-100 whitespace-pre-wrap block w-full"
+            className="text-[12px] leading-snug text-foreground whitespace-pre-wrap block w-full"
             ariaLabel="Твит"
           />
         </div>
@@ -1278,9 +1597,9 @@ function TwitterBody({
           {tweets.map((tw, i) => (
             <li
               key={i}
-              className="rounded-md border border-white/5 bg-black/30 p-2"
+              className="rounded-md border border-border/60 bg-muted p-2"
             >
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 {i + 1}/{total}
               </div>
               <EditableText
@@ -1289,7 +1608,7 @@ function TwitterBody({
                 onSave={(v) => onUpdateTweet(i, v)}
                 multiline
                 rows={3}
-                className="mt-1 text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+                className="mt-1 text-[11px] leading-snug text-foreground whitespace-pre-wrap block w-full"
                 ariaLabel={`Твит ${i + 1}`}
               />
             </li>
@@ -1322,8 +1641,8 @@ function InstagramBody({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="rounded-md border border-white/5 bg-black/30 p-2 flex flex-col gap-1.5">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="rounded-md border border-border/60 bg-muted p-2 flex flex-col gap-1.5">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Caption
         </div>
         {hook ? (
@@ -1334,7 +1653,7 @@ function InstagramBody({
             multiline
             rows={2}
             placeholder="Хук…"
-            className="text-[11px] font-medium text-zinc-100 whitespace-pre-wrap block w-full"
+            className="text-[11px] font-medium text-foreground whitespace-pre-wrap block w-full"
             ariaLabel="Хук"
           />
         ) : null}
@@ -1345,7 +1664,7 @@ function InstagramBody({
           multiline
           rows={5}
           placeholder="Подпись…"
-          className="text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+          className="text-[11px] leading-snug text-foreground whitespace-pre-wrap block w-full"
           ariaLabel="Подпись"
         />
         {cta ? (
@@ -1356,13 +1675,13 @@ function InstagramBody({
             multiline
             rows={2}
             placeholder="CTA…"
-            className="text-[11px] italic text-indigo-200 whitespace-pre-wrap block w-full"
+            className="text-[11px] italic text-content whitespace-pre-wrap block w-full"
             ariaLabel="CTA"
           />
         ) : null}
       </div>
-      <div className="rounded-md border border-amber-400/20 bg-amber-400/[0.04] p-2">
-        <div className="text-[10px] uppercase tracking-wider text-amber-300/80 mb-1">
+      <div className="rounded-md border border-warn/20 bg-warn/[0.04] p-2">
+        <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">
           {t.format.visualDirection}
         </div>
         <EditableText
@@ -1372,7 +1691,7 @@ function InstagramBody({
           multiline
           rows={3}
           placeholder="Что в кадре, ракурс, свет…"
-          className="text-[11px] leading-snug text-zinc-200 whitespace-pre-wrap block w-full"
+          className="text-[11px] leading-snug text-foreground whitespace-pre-wrap block w-full"
           ariaLabel="Visual direction"
         />
       </div>
@@ -1388,7 +1707,7 @@ const PORT_STYLE_LEFT: React.CSSProperties = {
   border: "1px solid rgba(0, 0, 0, 0.06)",
   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.4)",
   left: -13,
-  color: "rgba(255,255,255,0.7)",
+  color: "rgb(var(--ink-rgb) / 0.7)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -1398,3 +1717,87 @@ const PORT_STYLE_LEFT: React.CSSProperties = {
 // Suppress unused import warnings (Sparkles imported above but used only in
 // optional flows): React doesn't warn but keep static reference.
 void Sparkles;
+
+
+/**
+ * Вывод рецензии: оценка, «Главное», сгруппированные тезисы, послесловие.
+ * Только чтение — правка рецензии целиком делается в модалке просмотра,
+ * как у статьи; здесь важно видеть структуру, а не редактировать её в ноде.
+ */
+function ReviewBody({ format }: { format: FormatNodeData }) {
+  const sections = format.sections ?? [];
+  const keyPoints = (format as { key_points?: string[] }).key_points ?? [];
+  const verdict = (format as { verdict?: string }).verdict ?? "";
+  const audience = (format as { audience?: string }).audience ?? "";
+  const afterword = (format as { afterword?: string }).afterword ?? "";
+  const tezisCount = (format as { source_tezis_count?: number }).source_tezis_count;
+
+  return (
+    <div className="flex flex-col gap-2.5 text-[11.5px] leading-snug">
+      {format.title && (
+        <div className="text-[13px] font-semibold text-foreground">
+          {format.title}
+        </div>
+      )}
+      {(format as { subtitle?: string }).subtitle && (
+        <div className="text-muted-foreground">
+          {(format as { subtitle?: string }).subtitle}
+        </div>
+      )}
+
+      {(verdict || audience) && (
+        <div className="flex flex-wrap gap-1.5">
+          {verdict && <span className="chip or">{verdict}</span>}
+          {audience && <span className="chip">{audience}</span>}
+        </div>
+      )}
+
+      {keyPoints.length > 0 && (
+        <div>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            Главное
+          </div>
+          <ul className="flex flex-col gap-1">
+            {keyPoints.map((kp, i) => (
+              <li key={i} className="text-foreground">
+                — {kp}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sections.map((sec, i) => {
+        const points = (sec as { points?: string[] }).points ?? [];
+        return (
+          <div key={i}>
+            {sec.heading && (
+              <div className="mb-1 font-medium text-foreground">{sec.heading}</div>
+            )}
+            <ul className="flex flex-col gap-1">
+              {points.map((pt, j) => (
+                <li key={j} className="text-muted-foreground">
+                  — {pt}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+
+      {afterword && (
+        <div>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            Что я забрал себе
+          </div>
+          <div className="text-foreground">{afterword}</div>
+        </div>
+      )}
+
+      <div className="text-[10px] text-muted-foreground">
+        {format.word_count ? `${format.word_count} слов` : ""}
+        {tezisCount ? ` · по ${tezisCount} тезисам` : ""}
+      </div>
+    </div>
+  );
+}

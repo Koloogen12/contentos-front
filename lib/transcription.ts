@@ -36,6 +36,27 @@ export async function transcribeYoutube(
 }
 
 /**
+ * Kick off URL → article-body fetch (trafilatura on the server). Writes the
+ * extracted text to `node.data.content` on success, so downstream extract
+ * nodes can consume it just like a YouTube transcript or pasted text.
+ *
+ * Use when the user pastes a blog / article URL into the SourceNode's
+ * "URL" tab. Returns a SkillRun id the caller polls like any other run.
+ */
+export async function fetchUrlArticle(
+  nodeId: string,
+  url: string,
+): Promise<SkillRunStarted> {
+  return apiFetch<SkillRunStarted>(
+    `/api/v1/nodes/${nodeId}/fetch-url`,
+    {
+      method: "POST",
+      body: { url },
+    },
+  );
+}
+
+/**
  * Upload an audio/video file for transcription using a raw XHR so we can
  * surface real-time upload progress (fetch can't expose `progress` events for
  * the request body in browsers).

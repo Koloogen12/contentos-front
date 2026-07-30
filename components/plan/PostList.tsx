@@ -334,7 +334,7 @@ export function PostList({ onPostClick }: PostListProps) {
               filtered.map((post, i) => (
                 <tr
                   key={post.id}
-                  className="cursor-pointer border-t border-[color:var(--border-subtle)] hover:bg-white/[0.03]"
+                  className="cursor-pointer border-t border-[color:var(--border-subtle)] hover:bg-foreground/[0.03]"
                   onClick={() => onPostClick(post)}
                 >
                   <td className="px-2 py-1.5 tabular-nums text-[color:var(--text-muted)]">
@@ -373,7 +373,7 @@ export function PostList({ onPostClick }: PostListProps) {
                   >
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        className="rounded p-1 hover:bg-white/10"
+                        className="rounded p-1 hover:bg-foreground/10"
                         aria-label="Actions"
                       >
                         <MoreHorizontal size={14} />

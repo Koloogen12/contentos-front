@@ -7,7 +7,7 @@
 
 export const t = {
   // ----- Brand -----
-  brandName: "THE CONTENT",
+  brandName: "THE DRAFT",
 
   // ----- Auth -----
   auth: {
@@ -38,6 +38,14 @@ export const t = {
     h1Line1: "Контент-пайплайн на одной доске.",
     h1Line2: "Источник → тезисы → готовый пост.",
     sub: "Бесконечный канвас, AI-скиллы, твой голос. Без копирования между Telegram, Claude и заметками.",
+    // Stronger framing for first-time preview visitors landing from the
+    // marketing site / /try. Variant C — productivity-led headline. Body
+    // copy is short on purpose; the canvas itself is the proof.
+    previewH1Line1: "Контент-конвейер",
+    previewH1Line2: "для серьёзных авторов.",
+    previewSub:
+      "Источник → тезисы → формат → публикация. На одной канве. Без перебежек между ChatGPT, Notion и Telegram.",
+    previewBadge: "Превью без регистрации · 1 канвас бесплатно",
     searchPlaceholder: "Поиск канвасов...",
     newCanvas: "Новый канвас",
     tour: "Тур",
@@ -107,6 +115,10 @@ export const t = {
         desc: "AI вытащит тезисы со скором",
       },
       format: { label: "Контент", desc: "Готовый пост для платформы" },
+      llm: {
+        label: "LLM-ассистент",
+        desc: "Чат с Opus 4.8 по подключённым нодам",
+      },
     },
   },
 
@@ -126,11 +138,14 @@ export const t = {
       handle: "@kochnefff",
     },
     transcribe: "Транскрибировать",
+    fetchUrl: "Загрузить",
+    refetchUrl: "Перезагрузить с новой ссылки",
     progress: {
       captions: "Ищу субтитры...",
       audio: "Скачиваю аудио...",
       transcribing: "Транскрибирую...",
       whisper: (pct: number) => `Whisper транскрибирует... ${pct}%`,
+      fetchingUrl: "Загружаю статью...",
     },
     captionsBadge: "субтитры YouTube",
     whisperBadge: "Whisper AI",
@@ -204,6 +219,7 @@ export const t = {
       rehook: "Другой хук",
       shorten: "Сократить",
       amplifyVoice: "Усилить голос",
+      editText: "Редактура",
       platform: "Под платформу",
     },
     copySuccess: "Скопировано в буфер",
@@ -272,26 +288,27 @@ export const t = {
       addTrait: "Добавить",
     },
     ai: {
-      sub: "Какая модель используется для всех нод по умолчанию. Можно переопределить на уровне отдельной ноды.",
-      apiKeyHeader: "API-ключ",
-      apiKeyHint:
-        "Ключ хранится зашифрованно и используется только для запросов с вашего аккаунта.",
+      sub: "Модель, на которой работают все ноды. Выбор модели на уровне аккаунта появится позже — сейчас она задаётся на сервере.",
+      soonNote:
+        "Переключение моделей и свой API-ключ — в разработке. Сейчас все ноды работают на модели ниже.",
       providers: [
         {
-          id: "claude",
-          name: "Claude Sonnet 4.5",
-          sub: "Anthropic · рекомендовано для длинных текстов",
-          badge: "ПО УМОЛЧАНИЮ",
+          id: "opus48",
+          name: "Claude Opus 4.8",
+          sub: "Anthropic · и креатив, и структурный JSON",
+          badge: "АКТИВНА",
         },
         {
-          id: "gpt5",
-          name: "GPT-5",
-          sub: "OpenAI · быстрая генерация коротких форматов",
+          id: "grok43",
+          name: "Grok 4.3",
+          sub: "xAI · рубленый стиль для коротких форматов",
+          badge: "СКОРО",
         },
         {
-          id: "gemini",
-          name: "Gemini 2.5 Pro",
-          sub: "Google · мультимодальный, видео/аудио",
+          id: "gpt54",
+          name: "GPT-5.4",
+          sub: "OpenAI · длинные структурированные форматы",
+          badge: "СКОРО",
         },
       ] as ReadonlyArray<{
         id: string;
@@ -861,7 +878,7 @@ export const t = {
   // ----- Settings: browser extension stub -----
   extension: {
     title: "Browser extension",
-    desc: "Вырезать в ContentOS со страницы — скоро будет.",
+    desc: "Вырезать в THE DRAFT со страницы — скоро будет.",
     soon: "Скоро",
   },
 

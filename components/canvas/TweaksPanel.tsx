@@ -64,14 +64,14 @@ export function TweaksPanel({ node, onClose }: TweaksPanelProps) {
       className={cn(
         // Floating bottom-right above the MiniMap (~190px).
         "fixed bottom-[210px] right-4 z-30 w-[268px]",
-        "rounded-2xl border border-white/10 bg-[rgba(20,22,24,0.95)]",
+        "rounded-2xl border border-border bg-card/95",
         "shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-md",
         "animate-in slide-in-from-right-4 fade-in duration-150",
       )}
       role="complementary"
       aria-label="Tweaks"
     >
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
         <div className="text-[12px] font-semibold tracking-wide text-foreground">
           Tweaks
         </div>
@@ -146,7 +146,7 @@ export function TweaksPanel({ node, onClose }: TweaksPanelProps) {
           </>
         )}
 
-        <div className="text-[10px] leading-relaxed text-[color:var(--text-muted)] pt-2 border-t border-white/5">
+        <div className="text-[10px] leading-relaxed text-[color:var(--text-muted)] pt-2 border-t border-border/60">
           Каждое действие создаёт новый snapshot. Откатиться — через «Версии».
         </div>
       </div>
