@@ -16,8 +16,6 @@ import type {
   WeekResponse,
 } from "@/lib/types";
 import { t } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { WeeklyCalendar } from "@/components/plan/WeeklyCalendar";
 import { MonthlyCalendar } from "@/components/plan/MonthlyCalendar";
 import { PostList } from "@/components/plan/PostList";
@@ -111,36 +109,38 @@ export default function PlanPage() {
   };
 
   return (
-    <div className="flex flex-col">
+    <div className="pad">
       <TrialRedirect />
-      {/* Top bar */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-[color:var(--border-subtle)] bg-background/60 px-6 py-3">
-        <div className="text-[15px] font-semibold">{t.plan.title}</div>
-        <div className="co-plan-views" role="tablist">
+      {/* Шапка по прототипу: заголовок, сегментированный переключатель
+          режимов и действие справа — всё в одну строку .ph */}
+      <div className="ph">
+        <h1 style={{ fontSize: 24, marginRight: 6 }}>{t.plan.title}</h1>
+        <div className="seg" role="tablist">
           {VIEWS.map((v) => (
             <button
               key={v.key}
               type="button"
               role="tab"
               aria-selected={view === v.key}
-              className={cn(
-                "co-plan-view-btn",
-                view === v.key && "active",
-              )}
+              data-on={view === v.key ? "1" : "0"}
               onClick={() => setView(v.key)}
             >
               {v.label}
             </button>
           ))}
         </div>
-        <div className="ml-auto">
-          <Button onClick={() => openQuickAdd()}>
+        <div className="r">
+          <button
+            type="button"
+            className="btn btn-or"
+            onClick={() => openQuickAdd()}
+          >
             <Plus className="h-4 w-4" /> {t.plan.addBtn}
-          </Button>
+          </button>
         </div>
-      </header>
+      </div>
 
-      <div className="co-plan-shell">
+      <div className="plan">
         <QueueSidebar
           handle={handle}
           onPostClick={(post) => setDrawerPost(post)}

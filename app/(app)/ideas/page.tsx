@@ -1,288 +1,848 @@
 "use client";
 
-/**
- * Brain-dump → tezis-bank page.
- *
- * Single-textarea UX: paste anything from one sentence to a paragraph,
- * click "Разобрать". AI parses into 3-7 candidates, user picks which to
- * commit. Saved ones become `KnowledgeItem` entries (type=tezis) and
- * show up in the tezis bank / what-to-write recommendations / canvas
- * idea picker.
- *
- * Why this exists: extract-from-source via Source→Extract node is great
- * for long content (YouTube, file). But the most common founder flow is
- * "I have a thought — save it". This page is the friction-zero capture
- * surface for that.
- */
-
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import {
+  AlertTriangle,
+  BookOpen,
+  Loader2,
+  Check,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Wand2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-
 import { ApiError } from "@/lib/api";
 import {
-  brainDump,
+  bulkDeleteKnowledge,
+  bulkUpdateKnowledgeProject,
   createKnowledge,
-  type BrainDumpProposal,
+  deleteKnowledge,
+  listKnowledge,
+  updateKnowledge,
 } from "@/lib/knowledge";
+import { listProjects } from "@/lib/projects";
+import type {
+  ContentPillar,
+  KnowledgeItemOut,
+  KnowledgeType,
+  ProjectOut,
+} from "@/lib/types";
+import { formatRelativeRu, t } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { Potential } from "@/components/knowledge/Potential";
+import { BrainDumpPanel } from "@/components/ideas/BrainDumpPanel";
 
+const KNOWLEDGE_TYPES: KnowledgeType[] = [
+  "tezis",
+  "reference",
+  "audience",
+  "voice_rule",
+  "content_theme",
+  "manifesto",
+];
 
-const KNOWLEDGE_QUERY_KEY = ["knowledge"];
+const PILLAR_OPTIONS: ContentPillar[] = ["R1", "R2", "R3", "R4"];
 
+function typeLabel(type: KnowledgeType): string {
+  return t.knowledge.typeFilter[type];
+}
 
-export default function IdeasPage() {
-  const qc = useQueryClient();
-  const [text, setText] = React.useState("");
-  const [proposals, setProposals] = React.useState<BrainDumpProposal[]>([]);
-  // Track which proposals have already been saved so we can disable
-  // their "Сохранить" button after one click.
-  const [savedIndexes, setSavedIndexes] = React.useState<Set<number>>(
-    () => new Set(),
+export default function KnowledgePage() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("project");
+
+  const [search, setSearch] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState<KnowledgeType | "">("");
+  const [pillarFilter, setPillarFilter] = React.useState<ContentPillar | "">(
+    "",
   );
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [dumpOpen, setDumpOpen] = React.useState(false);
+  const [editTarget, setEditTarget] = React.useState<KnowledgeItemOut | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] =
+    React.useState<KnowledgeItemOut | null>(null);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
 
-  const dumpMutation = useMutation({
-    mutationFn: () => brainDump(text.trim()),
-    onSuccess: (data) => {
-      setProposals(data.proposals);
-      setSavedIndexes(new Set());
-      if (data.proposals.length === 0) {
-        toast.info("AI не нашёл ни одного тезиса — попробуй описать мысль конкретнее");
-      } else {
-        toast.success(`Разобрал на ${data.proposals.length} тезис${pluralRu(data.proposals.length)}`);
-      }
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.detail : "Не удалось разобрать brain-dump",
-      ),
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: (proposal: BrainDumpProposal) =>
-      createKnowledge({
-        type: "tezis",
-        title: proposal.title,
-        body: proposal.body,
-        viral_score: proposal.viral_score,
-        pillar: proposal.pillar,
-        tags: proposal.tags,
+  const query = useQuery({
+    queryKey: [
+      "knowledge",
+      typeFilter || "all",
+      pillarFilter || "all",
+      { projectId: projectId ?? null },
+    ],
+    queryFn: () =>
+      listKnowledge({
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(pillarFilter ? { pillar: pillarFilter } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: KNOWLEDGE_QUERY_KEY });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.detail : "Не удалось сохранить тезис",
-      ),
   });
 
-  const onSave = async (i: number, p: BrainDumpProposal) => {
-    if (savedIndexes.has(i)) return;
-    try {
-      await saveMutation.mutateAsync(p);
-      setSavedIndexes((prev) => {
-        const next = new Set(prev);
-        next.add(i);
-        return next;
-      });
-      toast.success("Сохранено в банк");
-    } catch {
-      // toast already shown in onError
-    }
-  };
+  const filtered = React.useMemo(() => {
+    const items = query.data ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.body.toLowerCase().includes(q) ||
+        i.tags.some((tag) => tag.toLowerCase().includes(q)),
+    );
+  }, [query.data, search]);
 
-  const onSaveAll = async () => {
-    for (let i = 0; i < proposals.length; i += 1) {
-      if (savedIndexes.has(i)) continue;
-      await onSave(i, proposals[i]);
-    }
-  };
+  // Reset selection when filters or project change.
+  React.useEffect(() => {
+    setSelected(new Set());
+  }, [typeFilter, pillarFilter, projectId]);
 
-  const onReset = () => {
-    setProposals([]);
-    setSavedIndexes(new Set());
-    setText("");
-  };
+  const toggleSelected = React.useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Идеи</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Брось сюда мысль, заметку, кусок беседы из чата. AI разберёт на
-          3–7 готовых тезисов с viral-score, столбом и тегами. Сохрани те,
-          которые зайдут — они появятся в банке и будут видны на канвасе.
-        </p>
-      </div>
-
-      <div className="mb-3">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Например: «вчера понял, что AI-агенты заменяют не разработчиков, а Trello — это вот это вот про tooling vs job replacement»"
-          rows={6}
-          className="w-full resize-y rounded-xl border border-border bg-card/50 p-4 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-warn/60 focus:outline-none focus:ring-1 focus:ring-warn/40"
-          maxLength={8000}
-          disabled={dumpMutation.isPending}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              if (text.trim().length >= 5 && !dumpMutation.isPending) {
-                dumpMutation.mutate();
-              }
-            }
-          }}
-        />
-        <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>{text.length} / 8000 · Cmd+Enter — разобрать</span>
-          {proposals.length > 0 && (
-            <button
-              type="button"
-              className="text-warn hover:text-warn"
-              onClick={onReset}
-            >
-              Очистить
-            </button>
-          )}
+    <div className="pad">
+      <div className="ph">
+        <div>
+          <h1>{t.ideas.title}</h1>
+          <p>{t.ideas.sub}</p>
+        </div>
+        <div className="r">
+          <button
+            type="button"
+            className="btn btn-w"
+            onClick={() => setDumpOpen((v) => !v)}
+            aria-expanded={dumpOpen}
+          >
+            <Wand2 className="h-4 w-4" /> {t.ideas.brainDump}
+          </button>
+          <button
+            type="button"
+            className="btn btn-or"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" /> {t.knowledge.new}
+          </button>
         </div>
       </div>
 
-      <div className="mb-8 flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={() => dumpMutation.mutate()}
-          disabled={text.trim().length < 5 || dumpMutation.isPending}
-        >
-          {dumpMutation.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Wand2 size={14} />
-          )}
-          Разобрать на тезисы
-        </button>
-        {proposals.length > 0 && savedIndexes.size < proposals.length && (
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-card/40 px-4 py-2 text-sm font-medium hover:bg-card/60 disabled:opacity-60"
-            onClick={onSaveAll}
-            disabled={saveMutation.isPending}
-          >
-            Сохранить все ({proposals.length - savedIndexes.size})
-          </button>
+      {dumpOpen && <BrainDumpPanel onSaved={() => query.refetch()} />}
+
+      {/* Поиск и фильтр по типу — одна строка .filters, как в прототипе */}
+      <div className="filters">
+        <div className="search">
+          <Search className="h-[15px] w-[15px] shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t.knowledge.searchPlaceholder}
+            aria-label={t.knowledge.searchPlaceholder}
+          />
+        </div>
+        <TypePill
+          active={!typeFilter}
+          onClick={() => setTypeFilter("")}
+          label={t.knowledge.all}
+        />
+        {KNOWLEDGE_TYPES.map((tp) => (
+          <TypePill
+            key={tp}
+            active={typeFilter === tp}
+            onClick={() => setTypeFilter(tp)}
+            label={typeLabel(tp)}
+          />
+        ))}
+      </div>
+
+      {/* Рубрики — вторым, более мелким рядом (.subfilters + .pill.sm) */}
+      <div className="subfilters">
+        {t.knowledge.pillarLabel}
+        <TypePill
+          small
+          active={!pillarFilter}
+          onClick={() => setPillarFilter("")}
+          label={t.knowledge.pillarFilterAll}
+        />
+        {PILLAR_OPTIONS.map((p) => (
+          <TypePill
+            key={p}
+            small
+            active={pillarFilter === p}
+            onClick={() => setPillarFilter(p)}
+            label={p}
+          />
+        ))}
+      </div>
+
+      {selected.size > 0 && (
+        <BulkBar
+          ids={Array.from(selected)}
+          onClear={() => setSelected(new Set())}
+          onConfirmDelete={() => setConfirmBulkDelete(true)}
+        />
+      )}
+
+      <div className="mt-6">
+        {query.isPending ? (
+          <ListSkeleton />
+        ) : query.isError ? (
+          <ErrorBlock
+            detail={
+              query.error instanceof ApiError
+                ? query.error.detail
+                : t.knowledge.couldNotLoadDetail
+            }
+            onRetry={() => query.refetch()}
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<BookOpen className="h-5 w-5" />}
+            title={
+              search ? t.knowledge.emptyMatchTitle : t.knowledge.emptyTitle
+            }
+            description={
+              search ? t.knowledge.emptyMatchDesc : t.knowledge.emptyDesc
+            }
+            action={
+              !search ? (
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-4 w-4" /> {t.knowledge.new}
+                </Button>
+              ) : null
+            }
+          />
+        ) : (
+          <ul>
+            {filtered.map((item) => {
+              const isSelected = selected.has(item.id);
+              return (
+                <li className="kcard" key={item.id} data-sel={isSelected ? "1" : "0"}>
+                  {/* Порядок в шапке — как в прототипе: выбор, потенциал,
+                      заголовок, тип, рубрика, действия справа. */}
+                  <div className="kcard-hd">
+                    <span
+                      className="kbox"
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      aria-label={`Выбрать «${item.title}»`}
+                      tabIndex={0}
+                      data-on={isSelected ? "1" : "0"}
+                      onClick={() => toggleSelected(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                          e.preventDefault();
+                          toggleSelected(item.id);
+                        }
+                      }}
+                    >
+                      {isSelected && <Check className="h-3 w-3" />}
+                    </span>
+                    {item.viral_score !== null && (
+                      <Potential value={item.viral_score} />
+                    )}
+                    <span className="kcard-t">{item.title}</span>
+                    <span className="kcap">{typeLabel(item.type)}</span>
+                    {item.pillar && (
+                      <span className="chip violet">{item.pillar}</span>
+                    )}
+                    {item.is_dormant && (
+                      <span className="chip amber">{t.knowledge.dormant}</span>
+                    )}
+                    <span className="kcard-acts">
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget(item)}
+                        className="ib tt"
+                        data-tt={t.knowledge.edit}
+                        aria-label={t.knowledge.edit}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(item)}
+                        className="ib tt"
+                        data-tt={t.knowledge.delete}
+                        aria-label={t.knowledge.delete}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                  <p className="kcard-b">{item.body}</p>
+                  {item.tags.length > 0 && (
+                    <div className="ktags">
+                      {item.tags.map((tag) => (
+                        <span className="ktag" key={tag}>
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="kmeta">
+                    {t.knowledge.updated(formatRelativeRu(item.updated_at))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
 
-      {dumpMutation.isPending && (
-        <div className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
-          <Loader2 size={16} className="animate-spin" />
-          Разбираю…
-        </div>
-      )}
-
-      {proposals.length > 0 && (
-        <div className="space-y-3">
-          {proposals.map((p, i) => (
-            <ProposalCard
-              key={i}
-              proposal={p}
-              saved={savedIndexes.has(i)}
-              saving={saveMutation.isPending}
-              onSave={() => void onSave(i, p)}
-            />
-          ))}
-        </div>
-      )}
+      <CreateOrEditDialog
+        open={createOpen || !!editTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setEditTarget(null);
+          }
+        }}
+        editing={editTarget}
+      />
+      <DeleteDialog item={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      <BulkDeleteDialog
+        open={confirmBulkDelete}
+        ids={Array.from(selected)}
+        onClose={(deleted) => {
+          setConfirmBulkDelete(false);
+          if (deleted) setSelected(new Set());
+        }}
+      />
     </div>
   );
 }
 
-
-function ProposalCard({
-  proposal: p,
-  saved,
-  saving,
-  onSave,
+/** Пилюля фильтра (prime2: .pill). `small` — вариант для строки рубрик. */
+function TypePill({
+  active,
+  onClick,
+  label,
+  small = false,
 }: {
-  proposal: BrainDumpProposal;
-  saved: boolean;
-  saving: boolean;
-  onSave: () => void;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  small?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-xl border p-4 transition ${
-        saved
-          ? "border-success/40 bg-success/[0.06]"
-          : "border-border bg-card/40 hover:border-warn/30"
-      }`}
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn("pill", small && "sm")}
+      data-on={active ? "1" : "0"}
+      aria-pressed={active}
     >
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <div className="text-[15px] font-semibold leading-snug text-foreground">
-            {p.title}
+      {label}
+    </button>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <ul>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <li
+          key={i}
+          className="rounded-xl border border-border bg-card p-4"
+          aria-hidden
+        >
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="mt-2 h-4 w-full" />
+          <Skeleton className="mt-1 h-4 w-2/3" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ErrorBlock({
+  detail,
+  onRetry,
+}: {
+  detail: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="text-base font-medium text-foreground">
+            {t.knowledge.couldNotLoadTitle}
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+        </div>
+      </div>
+      <div className="mt-5">
+        <Button onClick={onRetry} variant="outline" size="sm">
+          <RefreshCw className="h-4 w-4" /> {t.knowledge.retry}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const itemSchema = z.object({
+  type: z.enum([
+    "tezis",
+    "reference",
+    "audience",
+    "voice_rule",
+    "content_theme",
+    "manifesto",
+  ]),
+  title: z.string().min(1, t.knowledge.titleRequired).max(500),
+  body: z.string().min(1, t.knowledge.bodyRequired),
+  tags: z.string().optional(),
+  pillar: z.string().optional(),
+});
+
+type ItemValues = z.infer<typeof itemSchema>;
+
+function CreateOrEditDialog({
+  open,
+  onOpenChange,
+  editing,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  editing: KnowledgeItemOut | null;
+}) {
+  const qc = useQueryClient();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ItemValues>({
+    resolver: zodResolver(itemSchema),
+    defaultValues: {
+      type: "tezis",
+      title: "",
+      body: "",
+      tags: "",
+      pillar: "",
+    },
+  });
+
+  React.useEffect(() => {
+    if (editing) {
+      reset({
+        type: editing.type,
+        title: editing.title,
+        body: editing.body,
+        tags: editing.tags.join(", "),
+        pillar: editing.pillar ?? "",
+      });
+    } else {
+      reset({ type: "tezis", title: "", body: "", tags: "", pillar: "" });
+    }
+  }, [editing, reset]);
+
+  const mutation = useMutation({
+    mutationFn: (values: ItemValues) => {
+      const tags = values.tags
+        ? values.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+        : [];
+      const pillar = (values.pillar
+        ? (values.pillar as ContentPillar)
+        : null) as ContentPillar | null;
+      if (editing) {
+        return updateKnowledge(editing.id, {
+          type: values.type,
+          title: values.title,
+          body: values.body,
+          tags,
+          pillar,
+        });
+      }
+      return createKnowledge({
+        type: values.type,
+        title: values.title,
+        body: values.body,
+        tags,
+        pillar,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["knowledge"] });
+      toast.success(editing ? t.knowledge.saved : t.knowledge.created);
+      onOpenChange(false);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotSaveToast,
+      ),
+  });
+
+  const onSubmit = handleSubmit((values) => mutation.mutate(values));
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) mutation.reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? t.knowledge.editTitle : t.knowledge.createTitle}
+          </DialogTitle>
+          <DialogDescription>{t.knowledge.formSub}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="k-type">{t.knowledge.typeLabel}</Label>
+              <select
+                id="k-type"
+                {...register("type")}
+                className="flex h-10 w-full rounded-md border border-input bg-background/40 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                {KNOWLEDGE_TYPES.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {typeLabel(tp)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="k-pillar">{t.knowledge.pillarLabel}</Label>
+              <select
+                id="k-pillar"
+                {...register("pillar")}
+                className="flex h-10 w-full rounded-md border border-input bg-background/40 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <option value="">{t.knowledge.pillarNone}</option>
+                {PILLAR_OPTIONS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          {p.body && p.body !== p.title && (
-            <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-              {p.body}
+          <div className="space-y-1.5">
+            <Label htmlFor="k-title">{t.knowledge.titleLabel}</Label>
+            <Input id="k-title" autoFocus {...register("title")} />
+            {errors.title && (
+              <p className="text-xs text-destructive">{errors.title.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="k-body">{t.knowledge.bodyLabel}</Label>
+            <Textarea id="k-body" rows={6} {...register("body")} />
+            {errors.body && (
+              <p className="text-xs text-destructive">{errors.body.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="k-tags">
+              {t.knowledge.tagsLabel}{" "}
+              <span className="text-muted-foreground">
+                {t.knowledge.tagsHint}
+              </span>
+            </Label>
+            <Input
+              id="k-tags"
+              placeholder={t.knowledge.tagsPlaceholder}
+              {...register("tags")}
+            />
+          </div>
+          {mutation.error && (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              {mutation.error instanceof ApiError
+                ? mutation.error.detail
+                : t.knowledge.couldNotSave}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              disabled={mutation.isPending}
+            >
+              {t.common.cancel}
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {t.common.saving}
+                </>
+              ) : editing ? (
+                t.common.save
+              ) : (
+                t.common.create
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteDialog({
+  item,
+  onClose,
+}: {
+  item: KnowledgeItemOut | null;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (id: string) => deleteKnowledge(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["knowledge"] });
+      toast.success(t.knowledge.deleted);
+      onClose();
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.couldNotDelete,
+      ),
+  });
+
+  return (
+    <Dialog
+      open={!!item}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t.knowledge.deleteTitle}</DialogTitle>
+          <DialogDescription>
+            {t.knowledge.deleteSub(item?.title ?? "")}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>
+            {t.common.cancel}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => item && mutation.mutate(item.id)}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? t.common.deleting : t.common.delete}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ----- Bulk operations bar -------------------------------------------------
+
+function BulkBar({
+  ids,
+  onClear,
+  onConfirmDelete,
+}: {
+  ids: string[];
+  onClear: () => void;
+  onConfirmDelete: () => void;
+}) {
+  const qc = useQueryClient();
+  const [moveOpen, setMoveOpen] = React.useState(false);
+  const projectsQuery = useQuery<ProjectOut[]>({
+    queryKey: ["projects"],
+    queryFn: listProjects,
+    enabled: moveOpen,
+  });
+
+  const moveMutation = useMutation({
+    mutationFn: (project_id: string | null) =>
+      bulkUpdateKnowledgeProject(ids, project_id),
+    onSuccess: (res) => {
+      toast.success(t.knowledge.bulkMoved(res.affected));
+      qc.invalidateQueries({ queryKey: ["knowledge"] });
+      onClear();
+      setMoveOpen(false);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.bulkFailed,
+      ),
+  });
+
+  return (
+    // Прототипная панель массовых действий (prime2: .bulk) — тёмная
+    // плашка, липнущая к верху списка, а не подсветка выделением.
+    <div className="bulk">
+      <b style={{ fontWeight: 600 }}>{t.knowledge.bulkSelected(ids.length)}</b>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <button
+            type="button"
+            className="btn btn-w btn-sm"
+            onClick={() => setMoveOpen((v) => !v)}
+            disabled={moveMutation.isPending}
+          >
+            {moveMutation.isPending && (
+              <Loader2 size={12} className="animate-spin" />
+            )}
+            {t.knowledge.bulkMove} ▾
+          </button>
+          {moveOpen && (
+            <div
+              className="absolute right-0 z-20 mt-1 max-h-72 w-56 overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+              onMouseLeave={() => setMoveOpen(false)}
+            >
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] hover:bg-accent"
+                onClick={() => moveMutation.mutate(null)}
+              >
+                — {t.shell.all} —
+              </button>
+              {projectsQuery.isPending && (
+                <div className="px-2 py-1 text-[12px] text-muted-foreground">
+                  {t.common.loading}
+                </div>
+              )}
+              {(projectsQuery.data ?? []).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12.5px] hover:bg-accent"
+                  onClick={() => moveMutation.mutate(p.id)}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: p.color }}
+                    aria-hidden
+                  />
+                  {p.name}
+                </button>
+              ))}
             </div>
           )}
         </div>
         <button
           type="button"
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition ${
-            saved
-              ? "bg-success/20 text-success cursor-default"
-              : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60"
-          }`}
-          onClick={onSave}
-          disabled={saved || saving}
+          className="btn btn-w btn-sm"
+          onClick={onConfirmDelete}
         >
-          {saved ? (
-            <>
-              <Check size={12} /> В банке
-            </>
-          ) : (
-            <>
-              <Sparkles size={12} /> Сохранить
-            </>
-          )}
+          <Trash2 size={12} /> {t.knowledge.bulkDelete}
         </button>
       </div>
-      <div className="flex items-center gap-2 text-[11px]">
-        <span className="rounded-sm bg-warn/20 px-1.5 py-0.5 font-medium text-warn">
-          Score {p.viral_score}/20
-        </span>
-        {p.pillar && (
-          <span className="rounded-sm bg-content/20 px-1.5 py-0.5 font-medium text-content">
-            {p.pillar}
-          </span>
-        )}
-        {p.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {p.tags.map((t) => (
-              <span
-                key={t}
-                className="rounded-sm bg-foreground/5 px-1.5 py-0.5 text-muted-foreground"
-              >
-                #{t}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      <button
+        type="button"
+        className="x"
+        onClick={onClear}
+        aria-label={t.knowledge.bulkClear}
+      >
+        <X size={15} />
+      </button>
     </div>
   );
 }
 
+function BulkDeleteDialog({
+  open,
+  ids,
+  onClose,
+}: {
+  open: boolean;
+  ids: string[];
+  onClose: (deleted: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => bulkDeleteKnowledge(ids),
+    onSuccess: (res) => {
+      toast.success(t.knowledge.bulkDeleted(res.affected));
+      qc.invalidateQueries({ queryKey: ["knowledge"] });
+      onClose(true);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.detail : t.knowledge.bulkFailed,
+      ),
+  });
 
-function pluralRu(n: number): string {
-  // 1 тезис, 2-4 тезиса, 5-20 тезисов
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "ов";
-  if (mod10 === 1) return "";
-  if (mod10 >= 2 && mod10 <= 4) return "а";
-  return "ов";
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose(false);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t.knowledge.bulkDeleteConfirmTitle}</DialogTitle>
+          <DialogDescription>
+            {t.knowledge.bulkDeleteConfirmDesc(ids.length)}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => onClose(false)}
+            disabled={mutation.isPending}
+          >
+            {t.common.cancel}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> {t.common.deleting}
+              </>
+            ) : (
+              t.common.delete
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

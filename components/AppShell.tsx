@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  BookOpen,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -81,7 +80,11 @@ const NAV: NavItemWithFlags[] = [
   // ничего не стало недостижимым.
   { label: "Канвасы", href: "/dashboard", icon: LayoutGrid, hint: "Материалы в работе" },
   { label: "Идеи", href: "/ideas", icon: Sparkles, hint: "Банк тезисов и заметок" },
-  { label: "База знаний", href: "/knowledge", icon: BookOpen, hint: "Факты, цифры, кейсы — контекст для AI" },
+  // Пункт «База знаний» из прототипа — это отдельная сущность (факты, цифры,
+  // кейсы, разобранные файлы), которой в бэкенде пока нет: типы записей —
+  // тезис, ссылка, аудитория, голос, тема — все относятся к Идеям. Вернём
+  // пункт, когда появится, чем его наполнять; пустой раздел хуже, чем его
+  // отсутствие.
   { label: "План", href: "/plan", icon: CalendarDays, hint: "Очередь, календарь, аналитика" },
   { label: "Голос", href: "/voice", icon: Mic, hideInPreview: true, hint: "Как ты пишешь" },
 ];

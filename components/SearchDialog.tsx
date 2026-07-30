@@ -86,7 +86,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const navigate = (hit: SearchHit) => {
     onOpenChange(false);
     if (hit.kind === "knowledge") {
-      router.push(`/knowledge?focus=${hit.id}`);
+      router.push(`/ideas?focus=${hit.id}`);
     } else if (hit.kind === "canvas") {
       router.push(`/canvas/${hit.id}`);
     } else {
