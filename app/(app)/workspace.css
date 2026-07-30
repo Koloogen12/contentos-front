@@ -439,3 +439,20 @@ button:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed}
 .search{display:flex;align-items:center;gap:9px;border:1px solid var(--p-line);border-radius:12px;padding:10px 14px;background:var(--p-card);min-width:340px;flex:1;max-width:460px;color:var(--p-ink-3);font-size:13.5px}
 .search input{flex:1;border:0;outline:0;background:none;font:400 13.5px/1 var(--font-onest),sans-serif;color:var(--p-ink);min-width:0}
 .subfilters{display:flex;align-items:center;gap:8px;margin-bottom:20px;font:500 10.5px/1 var(--font-onest),sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--p-ink-3)}
+
+/* ── Переопределения из секций v2/v3 прототипа ─────────────────────────
+   Эти строки живут в прототипе отдельно от своих базовых правил, поэтому
+   при секционном переносе они выпали. Именно из-за пропущенного .pad
+   контент-план был зажат: 1140px вместо 1320px не хватает на три колонки. */
+.pad{max-width:1320px}
+.chip{font-size:11px}
+.mono{font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--p-or);outline-offset:2px;border-radius:8px}
+
+/* Корзина в подписи ноды. Прячется, пока курсор не на ноде: подпись —
+   служебная строка, и постоянная кнопка в ней спорит с названием за
+   внимание. При фокусе с клавиатуры показывается всегда, иначе до неё
+   нельзя дойти табом. */
+.nlabel-del{margin-left:6px;width:20px;height:20px;border:0;background:none;border-radius:6px;display:grid;place-items:center;color:var(--p-ink-3);cursor:pointer;opacity:0;transition:opacity .12s,color .12s,background .12s}
+.react-flow__node:hover .nlabel-del,.nlabel-del:focus-visible{opacity:1}
+.nlabel-del:hover{color:var(--p-red);background:rgba(200,60,50,.1)}

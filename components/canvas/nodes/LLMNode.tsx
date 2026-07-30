@@ -44,6 +44,7 @@ import {
   PORT_STYLE_LEFT,
   PORT_STYLE_RIGHT,
 } from "./NodeShell";
+import { NodeLabel } from "@/components/canvas/nodes/NodeLabel";
 
 interface LLMNodeRfData {
   node: NodeOut;
@@ -194,10 +195,9 @@ export function LLMNode({ data, selected }: NodeProps) {
         <ArrowRight size={12} />
       </Handle>
 
-      <div className="nlabel">
-        <Bot size={12} />
-        <span>LLM · Opus 4.8</span>
-      </div>
+      <NodeLabel nodeId={node.id} icon={<Bot size={12} />}>
+        LLM · Opus 4.8
+      </NodeLabel>
 
       <div
         className={cn(

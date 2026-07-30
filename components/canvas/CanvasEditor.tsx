@@ -33,7 +33,11 @@ import { ApiError } from "@/lib/api";
 import { getCanvas as fetchCanvas, runAllOnCanvas } from "@/lib/canvases";
 import { createNode, deleteNode, updateNode } from "@/lib/nodes";
 import { createEdge, deleteEdge } from "@/lib/edges";
-import { uploadAudio } from "@/lib/transcription";
+import {
+  fetchUrlArticle,
+  transcribeYoutube,
+  uploadAudio,
+} from "@/lib/transcription";
 import {
   getSkillRun,
   runNode as runNodeApi,
@@ -608,6 +612,16 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     arrowDraft,
   ]);
 
+  // Кнопка-корзина на ноде и клавиша Delete ведут в одно и то же
+  // подтверждение: разные пути удаления не должны вести себя по-разному.
+  const requestDeleteNode = React.useCallback(
+    (nodeId: string) => {
+      const snap = getNodeSnapshot(nodeId);
+      if (snap) setPendingDelete(snap);
+    },
+    [getNodeSnapshot],
+  );
+
   const deleteNodeMutation = useMutation({
     mutationFn: (nodeId: string) => deleteNode(nodeId),
     onSuccess: (_data, nodeId) => {
@@ -1130,6 +1144,132 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
     [reactFlow, canvasId, buildRfNode, attachSkillRun, qc],
   );
 
+  // ----- Вставка из буфера (Cmd/Ctrl+V) -----
+  //
+  // Ссылку раньше приходилось класть на канвас руками: добавить ноду
+  // источника, выбрать вкладку, вставить адрес, нажать «вытянуть». Cmd+V
+  // делает всё это за один жест, а разбор типа берёт на себя канвас.
+  //
+  // Отдельные скиллы для YouTube и статей уже были в продукте — вставка
+  // просто выбирает нужный и сразу запускает его: смысл жеста в том, что
+  // на канвасе появляется материал, а не пустая карточка с адресом.
+  const YOUTUBE_RE =
+    /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?[^ ]*v=|shorts\/|live\/|embed\/)|youtu\.be\/)[\w-]{6,}/i;
+
+  const handlePasteText = React.useCallback(
+    async (raw: string, clientX: number, clientY: number) => {
+      const text = raw.trim();
+      if (!text) return;
+
+      let pos: { x: number; y: number };
+      try {
+        pos = reactFlow.screenToFlowPosition({ x: clientX, y: clientY });
+      } catch {
+        pos = { x: 0, y: 0 };
+      }
+      const x = pos.x - 148;
+      const y = pos.y - 40;
+
+      // Ссылкой считаем только буфер целиком: строка с адресом внутри
+      // абзаца — это текст, который человек вставляет как материал.
+      const isUrl = /^https?:\/\/\S+$/i.test(text);
+      const isYoutube = isUrl && YOUTUBE_RE.test(text);
+
+      try {
+        if (isYoutube) {
+          const created = await createNode(canvasId, {
+            type: "source",
+            position_x: x,
+            position_y: y,
+            data: { input_type: "youtube", youtube_url: text, content: "" },
+          });
+          setRfNodes((prev) => [...prev, buildRfNode(created)]);
+          qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+          const { skill_run_id } = await transcribeYoutube(created.id, text);
+          attachSkillRun(created.id, skill_run_id);
+          toast.success("Видео добавлено — снимаю транскрипт…");
+          return;
+        }
+
+        if (isUrl) {
+          const created = await createNode(canvasId, {
+            type: "source",
+            position_x: x,
+            position_y: y,
+            data: { input_type: "url", url: text, content: "" },
+          });
+          setRfNodes((prev) => [...prev, buildRfNode(created)]);
+          qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+          const { skill_run_id } = await fetchUrlArticle(created.id, text);
+          attachSkillRun(created.id, skill_run_id);
+          toast.success("Ссылка добавлена — вытягиваю текст…");
+          return;
+        }
+
+        const created = await createNode(canvasId, {
+          type: "source",
+          position_x: x,
+          position_y: y,
+          data: { input_type: "text", content: text.slice(0, 100_000) },
+        });
+        setRfNodes((prev) => [...prev, buildRfNode(created)]);
+        qc.invalidateQueries({ queryKey: ["canvas", canvasId] });
+        toast.success("Текст добавлен на канвас");
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.detail : "Не удалось вставить",
+        );
+      }
+    },
+    [reactFlow, canvasId, buildRfNode, attachSkillRun, qc],
+  );
+
+  // Вставка ловится на окне, а не на полотне: фокус после клика по канвасу
+  // остаётся на body, и слушатель на контейнере до события не доходит.
+  // Позицию берём от последнего положения курсора — у события вставки
+  // своих координат нет.
+  const pointerRef = React.useRef({ x: 0, y: 0 });
+  React.useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
+  React.useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      // Вставку внутри полей ввода не перехватываем: там человек правит
+      // текст ноды, а не кладёт материал на канвас.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const data = e.clipboardData;
+      if (!data) return;
+
+      const files = Array.from(data.files ?? []);
+      if (files.length > 0) {
+        e.preventDefault();
+        void handleFilesDrop(files, pointerRef.current.x, pointerRef.current.y);
+        return;
+      }
+
+      const text = data.getData("text/plain");
+      if (text.trim()) {
+        e.preventDefault();
+        void handlePasteText(text, pointerRef.current.x, pointerRef.current.y);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [handlePasteText, handleFilesDrop]);
+
   // ----- Run all -----
   const runnableCount = React.useMemo(() => {
     return rfNodes.filter(
@@ -1397,6 +1537,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getNode: getNodeSnapshot,
       getCanvas,
       isRunning,
+      requestDeleteNode,
       spawnFormatFromTezis,
       spawnReviewFromExtract,
     }),
@@ -1408,6 +1549,7 @@ function CanvasEditorInner({ canvas }: CanvasEditorProps) {
       getNodeSnapshot,
       getCanvas,
       isRunning,
+      requestDeleteNode,
       spawnFormatFromTezis,
       spawnReviewFromExtract,
     ],

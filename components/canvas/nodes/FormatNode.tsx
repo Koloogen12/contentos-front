@@ -84,6 +84,7 @@ import type { PostPlatform } from "@/lib/types";
 import {
   PORT_STYLE_LEFT,
 } from "./NodeShell";
+import { NodeLabel } from "@/components/canvas/nodes/NodeLabel";
 
 interface FormatNodeRfData {
   node: NodeOut;
@@ -339,10 +340,9 @@ export function FormatNode({ data, selected }: NodeProps) {
       >
         <ArrowRight size={12} />
       </Handle>
-      <div className="nlabel">
-        <PenLine size={12} />
-        <span>{t.format.label}</span>
-      </div>
+      <NodeLabel nodeId={node.id} icon={<PenLine size={12} />}>
+        {t.format.label}
+      </NodeLabel>
       <div
         className={cn(
           "nbox",

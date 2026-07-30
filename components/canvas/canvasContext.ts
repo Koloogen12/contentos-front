@@ -42,6 +42,12 @@ export interface CanvasNodeContextValue {
   /** Returns true while a skill-run for this node is in flight. */
   isRunning: (nodeId: string) => boolean;
   /**
+   * Запросить удаление ноды — открывает то же подтверждение, что и Delete
+   * с клавиатуры. Кнопка нужна потому, что горячая клавиша обнаруживается
+   * не всеми: нода выглядит как карточка, а не как выделяемый объект.
+   */
+  requestDeleteNode: (nodeId: string) => void;
+  /**
    * Spawn a fresh format node attached to a specific talking-point card on
    * an extract node. Creates both the node (with platform pre-set, body
    * fields blank) and the edge that carries `{tezis_index}` so the worker

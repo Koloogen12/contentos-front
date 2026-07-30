@@ -10,6 +10,7 @@ import {
   FolderKanban,
   LogOut,
   Mic,
+  Plug,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -87,6 +88,13 @@ const NAV: NavItemWithFlags[] = [
   // отсутствие.
   { label: "План", href: "/plan", icon: CalendarDays, hint: "Очередь, календарь, аналитика" },
   { label: "Голос", href: "/voice", icon: Mic, hideInPreview: true, hint: "Как ты пишешь" },
+  {
+    label: "Подключения",
+    href: "/connections",
+    icon: Plug,
+    hideInPreview: true,
+    hint: "Куда публикуем: Telegram, LinkedIn и остальные",
+  },
 ];
 
 const FILTERABLE_PATHS = ["/dashboard", "/knowledge"] as const;

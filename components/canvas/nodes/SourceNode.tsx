@@ -36,6 +36,7 @@ import {
   INVISIBLE_HANDLE,
   PORT_STYLE_RIGHT,
 } from "./NodeShell";
+import { NodeLabel } from "@/components/canvas/nodes/NodeLabel";
 
 interface SourceNodeRfData {
   node: NodeOut;
@@ -64,10 +65,9 @@ export function SourceNode({ data, selected }: NodeProps) {
         position={Position.Left}
         style={INVISIBLE_HANDLE}
       />
-      <div className="nlabel">
-        <Inbox size={12} />
-        <span>{t.source.label}</span>
-      </div>
+      <NodeLabel nodeId={node.id} icon={<Inbox size={12} />}>
+        {t.source.label}
+      </NodeLabel>
       <div
         className={cn(
           "nbox",
@@ -497,6 +497,19 @@ function YoutubePanel({
             <div className="co-progress-fill" style={{ width: `${progress}%` }} />
           </div>
         </>
+      )}
+
+      {/* Превью кадра. Ссылка сама по себе не читается как материал — по
+          обложке видно, что именно легло на канвас. Картинку отдаёт CDN
+          YouTube по id, поэтому запроса к нашему серверу не нужно. */}
+      {data.youtube_video_id && (
+        <img
+          src={`https://i.ytimg.com/vi/${data.youtube_video_id}/hqdefault.jpg`}
+          alt={data.youtube_title || "Кадр из видео"}
+          className="w-full rounded-[10px] border border-[color:var(--p-line)] object-cover"
+          style={{ aspectRatio: "16 / 9" }}
+          loading="lazy"
+        />
       )}
 
       {showDone && (

@@ -810,3 +810,17 @@ export interface ScheduleFromNodeRequest {
   pillar?: ContentPillar | null;
   tags?: string[];
 }
+
+/** Статус интеграции с площадкой (см. backend app/api/v1/integrations.py). */
+export type IntegrationStatus = "ready" | "needs_setup" | "planned";
+
+export interface IntegrationOut {
+  id: string;
+  name: string;
+  status: IntegrationStatus;
+  capability: string;
+  /** Что нужно сделать, чтобы площадка заработала. Пусто, если готова. */
+  setup_hint: string;
+  /** Ограничение или цена площадки, о которых честно предупреждаем. */
+  caveat: string;
+}

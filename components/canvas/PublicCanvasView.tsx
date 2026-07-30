@@ -232,6 +232,9 @@ function PublicCanvasInner({
       // a stable `undefined` getter.
       getCanvas: () => undefined,
       isRunning: () => false,
+      requestDeleteNode: () => {
+        /* read-only */
+      },
       spawnFormatFromTezis: async () => {
         /* read-only */
       },

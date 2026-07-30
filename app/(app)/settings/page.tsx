@@ -8,6 +8,7 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -33,8 +34,6 @@ import { useAuthStore } from "@/stores/auth";
 import type { BrandContextOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LinkedInAccountsSection } from "@/components/LinkedInAccountsSection";
-import { TelegramTargetsSection } from "@/components/TelegramTargetsSection";
 import { VoiceTrainingSection } from "@/components/VoiceTrainingSection";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -53,18 +52,22 @@ type FormValues = z.infer<typeof schema>;
 
 type Section =
   | "profile"
-  | "voice"
-  | "ai"
   | "billing"
-  | "appearance"
   | "shortcuts";
 
+// «Мой голос» отсюда убран: он работал с теми же voice_samples и
+// brand_context, что и модуль «Голос», но без автоимпорта и редполитики —
+// то есть был усечённой копией. Два входа в одни данные расходятся по
+// возможностям и путают.
+//
+// «AI-провайдер» убран потому, что выбирать было нечего: список моделей
+// нередактируемый, активна серверная. Строка с активной моделью переехала
+// в профиль — она нужна, когда ноды ведут себя неожиданно.
+//
+// «Внешний вид» был заглушкой: переключатель темы живёт в шапке.
 const SECTIONS: { id: Section; label: string; Icon: LucideIcon }[] = [
   { id: "profile", label: t.settings.sections.profile, Icon: User },
-  { id: "voice", label: t.settings.sections.voice, Icon: Mic },
-  { id: "ai", label: t.settings.sections.ai, Icon: Sparkles },
   { id: "billing", label: t.settings.sections.billing, Icon: CreditCard },
-  { id: "appearance", label: t.settings.sections.appearance, Icon: Palette },
   {
     id: "shortcuts",
     label: t.settings.sections.shortcuts,
@@ -83,15 +86,11 @@ export default function SettingsPage() {
   const initialTab: Section = React.useMemo(() => {
     const raw = searchParams.get("tab");
     if (raw === "subscription" || raw === "billing") return "billing";
-    if (
-      raw === "profile" ||
-      raw === "voice" ||
-      raw === "ai" ||
-      raw === "appearance" ||
-      raw === "shortcuts"
-    ) {
-      return raw;
-    }
+    // Старые слаги удалённых разделов не роняем в 404, а уводим по смыслу:
+    // «голос» — на свой модуль, остальные — в профиль.
+    if (raw === "voice") return "profile";
+    if (raw === "ai" || raw === "appearance") return "profile";
+    if (raw === "profile" || raw === "shortcuts") return raw;
     return "profile";
   }, [searchParams]);
   const [tab, setTab] = React.useState<Section>(initialTab);
@@ -149,10 +148,7 @@ export default function SettingsPage() {
         </aside>
         <main className="co-settings-content">
           {tab === "profile" && <ProfileSection />}
-          {tab === "voice" && <VoiceSection />}
-          {tab === "ai" && <AISection />}
           {tab === "billing" && <BillingSection />}
-          {tab === "appearance" && <AppearanceSection />}
           {tab === "shortcuts" && <ShortcutsSection />}
         </main>
       </div>
@@ -231,6 +227,27 @@ function ProfileSection() {
       ) : query.data ? (
         <BrandContextForm context={query.data} />
       ) : null}
+
+      <ActiveModelNote />
+    </div>
+  );
+}
+
+/**
+ * Строка об активной модели — всё, что осталось от раздела «AI-провайдер».
+ *
+ * Сам раздел был списком, в котором нечего выбирать: модель задаётся на
+ * сервере, остальные пункты помечены как недоступные. Но знать, на чём
+ * считают ноды, нужно — без этого непонятно, почему текст поменял характер
+ * после обновления. Поэтому список ушёл, а факт остался.
+ */
+function ActiveModelNote() {
+  const active = t.settings.ai.providers.find((p) => p.badge === "АКТИВНА");
+  if (!active) return null;
+  return (
+    <div className="kmeta" style={{ marginTop: 20 }}>
+      Ноды работают на модели {active.name}. Она задаётся на сервере — выбор
+      на уровне аккаунта появится позже.
     </div>
   );
 }
@@ -241,67 +258,6 @@ function VoiceSection() {
       <div className="co-settings-h">{t.settings.sections.voice}</div>
       <div className="co-settings-sub">{t.settings.voice.sub}</div>
       <VoiceTrainingSection />
-    </div>
-  );
-}
-
-/**
- * AI-провайдер — read-only until per-account model selection is built.
- *
- * This screen used to be a Lovable-prototype mock: a local useState radio
- * group that persisted nothing, over a hardcoded list ("Claude Sonnet 4.5 ·
- * ПО УМОЛЧАНИЮ") that never matched the server. It read as a working
- * setting, so it actively misled about which model the nodes run on.
- *
- * Until the real feature exists (org-level model override + encrypted own
- * API key), this shows the truth: the active server model, non-clickable,
- * with the alternatives marked as not-yet-available. The API-key input is
- * gone rather than dead — a password field that silently discards input is
- * worse than no field.
- */
-function AISection() {
-  return (
-    <div className="co-settings-block">
-      <div className="co-settings-h">{t.settings.sections.ai}</div>
-      <div className="co-settings-sub">{t.settings.ai.sub}</div>
-      <div className="co-ai-providers">
-        {t.settings.ai.providers.map((p) => {
-          const active = p.badge === "АКТИВНА";
-          return (
-            <div
-              key={p.id}
-              className={cn("co-ai-card", active && "selected")}
-              style={active ? undefined : { opacity: 0.55 }}
-            >
-              <div className={cn("co-radio-circle", active && "checked")}>
-                {active ? <span style={{ fontSize: 9 }}>✓</span> : null}
-              </div>
-              <div style={{ flex: 1, textAlign: "left" }}>
-                <div className="flex items-center gap-2">
-                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                    {p.name}
-                  </div>
-                  {p.badge && <span className="co-badge-pill">{p.badge}</span>}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--text-tertiary)",
-                    marginTop: 3,
-                  }}
-                >
-                  {p.sub}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 14 }}
-      >
-        {t.settings.ai.soonNote}
-      </div>
     </div>
   );
 }
@@ -403,16 +359,18 @@ function BillingSection() {
         </p>
       </div>
 
-      <div className="mt-8">
-        <TelegramTargetsSection />
-      </div>
-      <div className="mt-8">
-        <LinkedInAccountsSection />
-      </div>
+      {/* Подключения площадок переехали в свой модуль: к тарифу они
+          отношения не имеют, а искали их не здесь. */}
+      <p className="mt-6 text-[12px] text-muted-foreground">
+        Подключение Telegram, LinkedIn и остальных площадок — в разделе{" "}
+        <Link href="/connections" className="underline">
+          Подключения
+        </Link>
+        .
+      </p>
     </div>
   );
 }
-
 
 function CurrentPlanCard({
   plan,
@@ -459,7 +417,6 @@ function CurrentPlanCard({
     </div>
   );
 }
-
 
 function PlanPreview({
   name,
@@ -513,27 +470,6 @@ function PlanPreview({
       >
         Скоро через Т-Банк
       </button>
-    </div>
-  );
-}
-
-function AppearanceSection() {
-  return (
-    <div className="co-settings-block">
-      <div className="co-settings-h">{t.settings.sections.appearance}</div>
-      <div className="co-settings-sub">{t.settings.appearance.sub}</div>
-      <div
-        style={{
-          fontSize: 12.5,
-          color: "var(--text-tertiary)",
-          padding: 14,
-          background: "rgb(var(--ink-rgb) / 0.025)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: 12,
-        }}
-      >
-        {t.settings.appearance.stub}
-      </div>
     </div>
   );
 }

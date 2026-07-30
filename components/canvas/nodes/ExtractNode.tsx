@@ -53,6 +53,7 @@ import {
   PORT_STYLE_LEFT,
   PORT_STYLE_RIGHT,
 } from "./NodeShell";
+import { NodeLabel } from "@/components/canvas/nodes/NodeLabel";
 
 const SPAWN_PLATFORMS: ReadonlyArray<{
   k: FormatPlatform;
@@ -156,10 +157,9 @@ export function ExtractNode({ data, selected }: NodeProps) {
       >
         <ArrowRight size={12} />
       </Handle>
-      <div className="nlabel">
-        <Sparkles size={12} />
-        <span>{t.extract.label}</span>
-      </div>
+      <NodeLabel nodeId={node.id} icon={<Sparkles size={12} />}>
+        {t.extract.label}
+      </NodeLabel>
       <div
         className={cn(
           "nbox",
