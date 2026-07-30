@@ -195,6 +195,10 @@ export function FormatNode({ data, selected }: NodeProps) {
     if (platform === "hooks") return hooksBank.length > 0;
     if (platform === "article") return articleSections.length > 0;
     if (platform === "review") return reviewSections.length > 0;
+    // Без этой ветки нода считала, что вывода нет, и вместо статьи
+    // показывала превью тезиса: у vc нет hooks, а общий фолбэк ниже
+    // проверяет именно их.
+    if (platform === "vc") return (format.sections ?? []).length > 0;
     if (platform === "twitter") return tweets.length > 0;
     if (platform === "instagram")
       return Boolean(format.caption || format.body || format.hook);
@@ -1771,10 +1775,21 @@ function ReviewBody({ format }: { format: FormatNodeData }) {
         </div>
       )}
 
+      {/* Не .chip: у него white-space:nowrap из прототипа — он рассчитан на
+          короткие метки, а здесь целые предложения, и они вылезали за край
+          ноды. Оставляем ту же подложку, но с переносом строк. */}
       {(verdict || audience) && (
-        <div className="flex flex-wrap gap-1.5">
-          {verdict && <span className="chip or">{verdict}</span>}
-          {audience && <span className="chip">{audience}</span>}
+        <div className="flex flex-col gap-1.5">
+          {verdict && (
+            <div className="rounded-lg border border-accent2/30 bg-accent2/10 px-2.5 py-1.5 text-accent2">
+              {verdict}
+            </div>
+          )}
+          {audience && (
+            <div className="rounded-lg border border-border bg-muted px-2.5 py-1.5 text-muted-foreground">
+              {audience}
+            </div>
+          )}
         </div>
       )}
 
