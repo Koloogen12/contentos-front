@@ -54,6 +54,17 @@ import {
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
+/**
+ * Форматы, которые действительно устроены как «хук → тело → CTA».
+ * У остальных своя структура (sections, slides, beats, tweets), и поля
+ * этой формы у них пустые по определению.
+ */
+const USES_HOOK_BODY_CTA = new Set<FormatPlatform>([
+  "telegram",
+  "linkedin",
+  "instagram",
+]);
+
 const PLATFORM_LABEL: Record<FormatPlatform, string> = {
   review: "Рецензия",
   vc: "vc.ru",
@@ -301,7 +312,12 @@ function DrawerInner({
             </section>
           )}
 
-          {/* Body editor — large area, primary read+edit surface */}
+          {/* Хук / тело / CTA — форма телеграм-подобных постов. У статьи,
+              рецензии, vc, карусели, рилсов, хуков и тредов своя структура,
+              и эти поля у них всегда пустые: они вводили в заблуждение,
+              выглядя как «текст потерялся». Для таких форматов рабочая
+              поверхность — «Готовый пост» ниже, он полный и редактируемый. */}
+          {USES_HOOK_BODY_CTA.has(platform) && (
           <section>
             <div className="co-plan-drawer-section-h">
               {t.format.bodyLabel}
@@ -316,8 +332,9 @@ function DrawerInner({
               placeholder="Тело поста"
             />
           </section>
+          )}
 
-          {/* CTA */}
+          {USES_HOOK_BODY_CTA.has(platform) && (
           <section>
             <div className="co-plan-drawer-section-h">
               {t.format.ctaLabel}
@@ -332,6 +349,7 @@ function DrawerInner({
               placeholder="CTA"
             />
           </section>
+          )}
 
           {/* Full text — assembled output, source of truth for copy/publish.
               For Telegram we offer a Preview/Edit toggle: most authors want
