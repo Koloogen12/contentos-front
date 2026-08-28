@@ -1,30 +1,64 @@
 "use client";
 
 /**
- * Панель находок.
+ * Проверка прогрева.
  *
- * Главный экран модуля: не «покрытие 87%», а «ты ни разу не показал, что у
- * тебя не получалось, и вот в какие дни это чинится». Проценты здесь
- * намеренно не показываются — они не говорят человеку, что делать.
+ * Раньше панель открывалась стеной красных карточек — на пустом запуске их
+ * было семь, ещё до того как человек хоть что-то сделал. Тон был выбран
+ * неверно: инструмент отчитывал за работу, которая не начиналась.
+ *
+ * Теперь сверху видно продвижение, критичное развёрнуто, остальное убрано
+ * под «показать ещё». Проценты по-прежнему не показываем: «покрытие 87%»
+ * не говорит человеку, что делать, — а «поставьте это в такие-то дни»
+ * говорит.
  */
 
 import * as React from "react";
 import { AlertTriangle, CheckCircle2, HelpCircle, Info } from "lucide-react";
 
 import type { Finding, LaunchReport } from "@/lib/launches";
-import { SEVERITY_LABELS } from "@/lib/launches";
+import { SEVERITY_LABELS, formatDay } from "@/lib/launches";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const SEVERITY_STYLES: Record<Finding["severity"], string> = {
-  critical: "border-l-red-500 bg-red-50/60 dark:bg-red-950/20",
-  high: "border-l-amber-500 bg-amber-50/60 dark:bg-amber-950/20",
-  medium: "border-l-slate-400 bg-slate-50/60 dark:bg-slate-900/30",
+  critical: "border-l-destructive bg-destructive/[0.06]",
+  high: "border-l-warn bg-warn/[0.07]",
+  medium: "border-l-border bg-muted/40",
 };
 
-function formatDays(days: string[]): string {
-  if (days.length === 0) return "";
-  const shown = days.slice(0, 3).map((d) => d.slice(8, 10) + "." + d.slice(5, 7));
-  const tail = days.length > 3 ? ` и ещё ${days.length - 3}` : "";
-  return shown.join(", ") + tail;
+function Meter({
+  label,
+  value,
+  total,
+  hint,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  hint: string;
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="flex flex-col gap-1.5" title={hint}>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium tabular-nums">
+        {value}{" "}
+        <span className="text-xs font-normal text-muted-foreground">
+          из {total}
+        </span>
+      </span>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            pct === 100 ? "bg-success" : pct > 0 ? "bg-accent2" : "bg-transparent",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export function FindingsPanel({
@@ -34,38 +68,64 @@ export function FindingsPanel({
   report?: LaunchReport;
   isLoading?: boolean;
 }) {
+  const [expanded, setExpanded] = React.useState(false);
+
   if (isLoading) {
     return (
-      <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border p-4 text-sm text-muted-foreground">
         Проверяю прогрев…
       </div>
     );
   }
   if (!report) return null;
 
-  const critical = report.findings.filter((f) => f.severity === "critical");
+  const findings = report.findings;
+  const critical = findings.filter((f) => f.severity === "critical");
+  const rest = findings.filter((f) => f.severity !== "critical");
+  const shown = expanded ? findings : critical;
+  const hidden = findings.length - shown.length;
 
   return (
-    <section className="flex flex-col gap-3">
-      <header className="flex flex-wrap items-center justify-between gap-2">
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold">Проверка прогрева</h2>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span title="Смыслы, подтверждённые вручную">
-            смыслы: {report.checkpoints_confirmed} из {report.checkpoints_total}
-          </span>
-          <span title="Психологические рычаги, задействованные хотя бы раз">
-            рычаги: {report.triggers_used} из {report.triggers_total}
-          </span>
-          <span title="Слоты, под которые подобрана идея">
-            с идеей: {report.slots_with_idea} из {report.slots_total}
-          </span>
-        </div>
+        <span
+          className={cn(
+            "text-xs",
+            report.ready ? "text-success" : "text-muted-foreground",
+          )}
+        >
+          {report.ready
+            ? "критичных пропусков нет"
+            : `${critical.length} критичных · ${rest.length} на ваше усмотрение`}
+        </span>
       </header>
 
+      <div className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-3">
+        <Meter
+          label="Смыслы закрыты"
+          value={report.checkpoints_confirmed}
+          total={report.checkpoints_total}
+          hint="Смыслы, которые вы подтвердили вручную. Автоматическая разметка в зачёт не идёт."
+        />
+        <Meter
+          label="Рычаги задействованы"
+          value={report.triggers_used}
+          total={report.triggers_total}
+          hint="Психологические рычаги, использованные хотя бы раз в подтверждённых слотах."
+        />
+        <Meter
+          label="Слоты с идеей"
+          value={report.slots_with_idea}
+          total={report.slots_total}
+          hint="Сколько дней плана обеспечены материалом из банка."
+        />
+      </div>
+
       {report.checkpoints_claimed > report.checkpoints_confirmed && (
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-xs">
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3">
           <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <p className="text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Ещё {report.checkpoints_claimed - report.checkpoints_confirmed}{" "}
             смыслов размечены автоматически. Пока вы их не подтвердите, они не
             идут в зачёт: разметка по ключевым словам ошибается, а уверенное
@@ -75,60 +135,80 @@ export function FindingsPanel({
       )}
 
       {report.ready && (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-50/60 p-3 text-sm dark:bg-emerald-950/20">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+        <div className="flex items-center gap-2 rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
           <span>
-            Критичных пропусков нет. Оставшиеся замечания ниже — на ваше
-            усмотрение.
+            Критичных пропусков нет. Оставшиеся замечания — на ваше усмотрение.
           </span>
         </div>
       )}
 
-      {critical.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {critical.length === 1
-            ? "Одна вещь способна стоить вам продаж:"
-            : `${critical.length} вещи способны стоить вам продаж:`}
-        </p>
-      )}
-
-      <ul className="flex flex-col gap-2">
-        {report.findings.map((finding) => (
-          <li
-            key={finding.code}
-            className={`rounded-md border border-l-4 p-3 ${SEVERITY_STYLES[finding.severity]}`}
-          >
-            <div className="flex items-start gap-2">
-              {finding.severity === "critical" ? (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-              ) : (
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      {shown.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {shown.map((finding) => (
+            <li
+              key={finding.code}
+              className={cn(
+                "rounded-lg border border-l-[3px] border-border p-3",
+                SEVERITY_STYLES[finding.severity],
               )}
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{finding.title}</span>
-                  <span className="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {SEVERITY_LABELS[finding.severity]}
-                  </span>
-                  {!finding.verified && (
-                    <span className="rounded-full border border-dashed px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      не проверено вручную
+            >
+              <div className="flex items-start gap-2.5">
+                {finding.severity === "critical" ? (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                ) : (
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{finding.title}</span>
+                    <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {SEVERITY_LABELS[finding.severity]}
                     </span>
+                    {!finding.verified && (
+                      <span className="rounded-full border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        не проверено вручную
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    {finding.message}
+                  </p>
+                  {finding.fix_days.length > 0 && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Чинится в днях:{" "}
+                      {finding.fix_days.slice(0, 3).map(formatDay).join(", ")}
+                      {finding.fix_days.length > 3 &&
+                        ` и ещё ${finding.fix_days.length - 3}`}
+                    </p>
                   )}
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {finding.message}
-                </p>
-                {finding.fix_days.length > 0 && (
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    Чинится в днях: {formatDays(finding.fix_days)}
-                  </p>
-                )}
               </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {hidden > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start px-0"
+          onClick={() => setExpanded(true)}
+        >
+          Показать ещё {hidden}
+        </Button>
+      )}
+      {expanded && findings.length > critical.length && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start px-0"
+          onClick={() => setExpanded(false)}
+        >
+          Свернуть
+        </Button>
+      )}
     </section>
   );
 }

@@ -103,6 +103,9 @@ export interface LaunchReport {
   triggers_total: number;
   slots_total: number;
   slots_with_idea: number;
+  /** Идей в банке и сколько из них получили рубрику. */
+  bank_total: number;
+  bank_marked: number;
 }
 
 export interface StoryLine {
@@ -266,3 +269,42 @@ export const SEVERITY_LABELS: Record<FindingSeverity, string> = {
   high: "Важно",
   medium: "Стоит поправить",
 };
+
+/** Рубрика слота — человеческим языком. */
+export const MEANING_LABELS: Record<string, string> = {
+  background: "Фон",
+  lifestyle: "Стиль жизни",
+  topic: "Продажа темы",
+  expertise: "Экспертиза",
+  newsjack: "Инфоповод",
+  clients: "Клиенты",
+  students: "Ученики",
+  product: "Продукт",
+  hype: "Ажиотаж",
+  freebie: "Бесплатник",
+  sales: "Продажи",
+  objections: "Возражения",
+};
+
+/**
+ * Тон этапа. Значения — семантические токены дизайн-системы, а не палитра
+ * Tailwind: палитровые классы не знают про тему и в светлой выглядят чужими.
+ * Смысл шкалы — нарастание давления от фонового прогрева к окну продаж.
+ */
+export const STAGE_TONE: Record<number, string> = {
+  1: "bg-muted-foreground/25",
+  2: "bg-info/35",
+  3: "bg-info/60",
+  4: "bg-content/50",
+  5: "bg-content/75",
+  6: "bg-warn/70",
+  7: "bg-accent2/80",
+};
+
+/** Дата ISO → «31 окт», без года: год виден в шапке запуска. */
+export function formatDay(iso: string): string {
+  const months = ["янв", "фев", "мар", "апр", "мая", "июн",
+                  "июл", "авг", "сен", "окт", "ноя", "дек"];
+  const [, m, d] = iso.split("-");
+  return `${Number(d)} ${months[Number(m) - 1] ?? ""}`;
+}

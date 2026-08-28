@@ -15,10 +15,14 @@ import { CalendarClock, Loader2, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
 
 import { ApiError } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/EmptyState";
 import {
   archiveLaunch,
   createLaunch,
   listLaunches,
+  formatDay,
   type LaunchOut,
 } from "@/lib/launches";
 
@@ -94,18 +98,14 @@ export default function LaunchesPage() {
             не хватает. Единицы запуска не смешиваются с обычным планом.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm shrink-0"
-          onClick={() => setCreating((v) => !v)}
-        >
-          <Plus className="mr-1 h-4 w-4" />
+        <Button className="shrink-0" onClick={() => setCreating((v) => !v)}>
+          <Plus className="h-4 w-4" />
           Новый запуск
-        </button>
+        </Button>
       </header>
 
       {creating && (
-        <section className="mb-8 rounded-lg border bg-card p-4">
+        <section className="mb-8 rounded-xl border border-border bg-card p-4">
           <h2 className="mb-1 text-sm font-semibold">Новый запуск</h2>
           <p className="mb-4 text-xs text-muted-foreground">
             Нужна одна дата — когда открываются продажи. Всё остальное
@@ -114,8 +114,8 @@ export default function LaunchesPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <label className="flex-1 text-xs font-medium">
               Название
-              <input
-                className="input mt-1 w-full"
+              <Input
+                className="mt-1"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Например: третий поток курса"
@@ -123,25 +123,22 @@ export default function LaunchesPage() {
             </label>
             <label className="text-xs font-medium">
               Открытие продаж
-              <input
+              <Input
                 type="date"
-                className="input mt-1 w-full"
+                className="mt-1"
                 value={salesOpen}
                 onChange={(e) => setSalesOpen(e.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
+            <Button
               disabled={!canCreate || createMutation.isPending}
               onClick={() => createMutation.mutate()}
             >
-              {createMutation.isPending ? (
+              {createMutation.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Создать"
               )}
-            </button>
+              Создать
+            </Button>
           </div>
         </section>
       )}
@@ -154,15 +151,17 @@ export default function LaunchesPage() {
       )}
 
       {!isLoading && launches?.length === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <Rocket className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Запусков пока нет</h2>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Создайте первый — укажите только дату открытия продаж, и система
-            развернёт календарь прогрева назад от неё, а потом покажет, каких
-            смыслов в нём не хватает.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Rocket className="h-5 w-5" />}
+          title="Запусков пока нет"
+          description="Создайте первый — укажите только дату открытия продаж. Календарь прогрева развернётся назад от неё, а проверка покажет, каких смыслов не хватает."
+          action={
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" />
+              Новый запуск
+            </Button>
+          }
+        />
       )}
 
       <ul className="flex flex-col gap-3">
@@ -171,11 +170,11 @@ export default function LaunchesPage() {
           const urgent = left >= 0 && left <= 7;
           return (
             <li key={launch.id}>
-              <div className="flex items-center justify-between gap-4 rounded-lg border bg-card p-4">
+              <div className="group flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/20">
                 <Link href={`/launches/${launch.id}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{launch.name}</span>
-                    <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                    <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                       {STATUS_LABELS[launch.status] ?? launch.status}
                     </span>
                     {launch.launch_number > 1 && (
@@ -186,20 +185,21 @@ export default function LaunchesPage() {
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                     <CalendarClock className="h-3.5 w-3.5" />
-                    <span className={urgent ? "font-medium text-amber-600" : ""}>
+                    <span className={urgent ? "font-medium text-warn" : ""}>
                       {formatRunway(left)}
                     </span>
                     <span>·</span>
-                    <span>продажи с {launch.sales_open}</span>
+                    <span>продажи с {formatDay(launch.sales_open)}</span>
                   </div>
                 </Link>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs shrink-0"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                   onClick={() => archiveMutation.mutate(launch.id)}
                 >
                   В архив
-                </button>
+                </Button>
               </div>
             </li>
           );
