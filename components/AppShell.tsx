@@ -8,15 +8,16 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  LayoutGrid,
   LogOut,
   Mic,
-  Plug,
   MoreHorizontal,
   Pencil,
+  Plug,
   Plus,
+  Rocket,
   Search,
   Settings,
-  LayoutGrid,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -87,6 +88,7 @@ const NAV: NavItemWithFlags[] = [
   // пункт, когда появится, чем его наполнять; пустой раздел хуже, чем его
   // отсутствие.
   { label: "План", href: "/plan", icon: CalendarDays, hint: "Очередь, календарь, аналитика" },
+  { label: "Запуски", href: "/launches", icon: Rocket, hint: "Прогрев к дате продаж" },
   { label: "Голос", href: "/voice", icon: Mic, hideInPreview: true, hint: "Как ты пишешь" },
   {
     label: "Подключения",
