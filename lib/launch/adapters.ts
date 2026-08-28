@@ -11,7 +11,7 @@
 import {
   type EvidenceState, type Launch, type PlanResult, type Slot, type StageKey,
   type StoryLine,
-  STAGES,
+  MEANINGS, RUBRICS, STAGES, rubByKey,
 } from "@/lib/launch/core";
 import type { EvidenceRow, LaunchOut, LaunchSlot, StoryLine as ApiLine } from "@/lib/launches";
 
@@ -29,15 +29,39 @@ function slotStatus(s: string): Slot["status"] {
   return "planned";
 }
 
+/**
+ * Рубрика и смысл со страховкой.
+ *
+ * У слотов, созданных до миграции 0018, смысла могло не быть вовсе: тогда
+ * рубрика лежала в колонке `meaning`, а смыслы — в массиве `checkpoints`,
+ * который заполнялся не у всех. Интерфейс ищет смысл в справочнике и без
+ * страховки падал бы на первом же открытии такого слота.
+ *
+ * Подставляется первый смысл того вопроса, к которому относится рубрика, —
+ * ровно то же правило, по которому смысл раздаёт планировщик. Это дефолт, а
+ * не выдумка: он ничего не «подтверждает», разметка остаётся неподтверждённой.
+ */
+function markup(row: LaunchSlot): { rubric: string; meaning: string } {
+  const rubric = row.rubric && rubByKey[row.rubric] ? row.rubric : RUBRICS[0].key;
+  if (row.meaning && MEANINGS.some((m) => m.key === row.meaning)) {
+    return { rubric, meaning: row.meaning };
+  }
+  const q = rubByKey[rubric].q;
+  return { rubric, meaning: MEANINGS.find((m) => m.q === q)!.key };
+}
+
 export function toSlot(row: LaunchSlot): Slot {
+  const { rubric, meaning } = markup(row);
   return {
     id: row.id,
     date: row.scheduled_date || "",
     platform: row.platform as Slot["platform"],
     stage: STAGE_BY_NUM[row.launch_stage ?? 0] || "soft",
-    rubric: row.rubric || "",
-    meaning: row.meaning || "",
-    trigger_key: row.trigger_key || "",
+    rubric,
+    meaning,
+    trigger_key: row.trigger_key && row.trigger_key.length
+      ? row.trigger_key
+      : rubByKey[rubric].lever,
     idea: row.talking_point_text,
     // Причина хранится на сервере дословно; `notes` — запасной путь для
     // слотов, созданных до миграции 0018.
