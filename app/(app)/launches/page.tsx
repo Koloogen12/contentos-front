@@ -1,18 +1,22 @@
 "use client";
 
 /**
- * Корень модуля «Запуски» — порт `LxModule` (launch-shell.jsx).
+ * Корень модуля «Запуски».
  *
- * Прототип держал всё в одном экране с табами и локальным состоянием; здесь так
- * же, потому что модуль так и спроектирован: запуск открывается тем, что нужно
- * сегодня, а не отдельным роутом на каждую вкладку.
+ * Состояние живёт на сервере. План, фактура и линии приходят запросами, все
+ * правки уходят ручками и инвалидируют кеш — вкладку можно перезагрузить в
+ * любой момент, ничего не потеряется.
  *
- * Что уже ходит в бэкенд: список запусков, создание, готовность продукта, архив.
- * Что живёт в состоянии клиента и требует эндпоинтов (список — в LAUNCHES.md
- * хендоффа): слоты (перенос, добавление, удаление, отметки `status`/`reaction`),
- * фактура по сорока смыслам, привязка анонса и раскрытия линии к конкретным
- * слотам, связь слота с документом канваса. Пока их нет, план разворачивается
- * на клиенте тем же алгоритмом, что и на сервере, — форма и цифры совпадают.
+ * На клиенте остались две вещи, и обе намеренно.
+ *
+ * Первая — расчёт проверок. Серверный `/report` отдаёт другую форму находки
+ * (`code`/`severity`/`fix_days`), а экраны построены на `risk`/`items`/`where`/
+ * `basis`: на этих полях держатся и очередь «что починить», и переходы из
+ * находки в конкретный день плана. Выравнивать контракт стоит отдельной
+ * задачей, а не заодно с переключением на новые ручки.
+ *
+ * Вторая — предпросмотр в мастере. Там запуска ещё нет, спрашивать сервер не о
+ * чем, а показать форму будущего плана надо до создания.
  */
 
 import * as React from "react";
@@ -21,12 +25,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api";
 import { listKnowledge } from "@/lib/knowledge";
 import {
-  archiveLaunch, createLaunch, listLaunches, updateLaunch,
-  type LaunchOut,
+  archiveLaunch, confirmStage as apiConfirmStage, createLaunch, createSlot,
+  deleteSlot, generatePlan, getEvidence, getPlan, listLaunches, listStoryLines,
+  updateEvidence, updateLaunch, updateSlot, updateStoryLine,
 } from "@/lib/launches";
 import {
-  type BankIdea, type Launch, type Slot, type StoryLine,
-  CADENCE, FIT, MEANINGS, QUOTA, add, diff, evidenceSeed, fmt, linkLines,
+  toApiIntensity, toEvidence, toLaunch, toLine, toPlan, toProofs, toSlot,
+} from "@/lib/launch/adapters";
+import {
+  type BankIdea, type Launch, type Slot,
+  CADENCE, FIT, MEANINGS, QUOTA, byKey, evidenceSeed, fmt,
   plan as buildPlan, plural, report as buildReport, rubByKey, slotsFor, today,
 } from "@/lib/launch/core";
 import {
@@ -39,47 +47,9 @@ import { LaunchRetro } from "@/components/launch/LaunchRetro";
 import { launchToast, type LaunchCtx, type LaunchState, type LaunchTab } from "@/components/launch/ctx";
 
 const LAUNCHES_KEY = ["launches"];
-
-/**
- * Статус запуска в модуле выводится из дат, а не из поля бэкенда: там свой
- * набор (`draft`/`active`/`paused`/`done`/`archived`), у модуля свой
- * (`draft`/`warm`/`sales`/`closed`), и совпадают они только по краям.
- */
-function statusFor(l: LaunchOut): Launch["status"] {
-  const T = today();
-  if (l.archived_at) return "closed";
-  if (l.sales_close && diff(l.sales_close, T) > 0) return "closed";
-  if (diff(l.sales_open, T) >= 0) return "sales";
-  return l.status === "draft" ? "draft" : "warm";
-}
-
-/** Запуск бэкенда → запуск модуля. Чего нет в контракте, помечено дефолтом. */
-function toModuleLaunch(l: LaunchOut): Launch {
-  return {
-    id: l.id,
-    name: l.name,
-    product: l.product_name || "—",
-    price: "—",
-    sales_open: l.sales_open,
-    sales_close: l.sales_close || "",
-    key_event_date: l.key_event_date || "",
-    key_event_type: l.key_event_type || "",
-    launch_number: l.launch_number,
-    // Бэкенд знает `heavy`, прототип — `dense`. Одно и то же, имя разное.
-    intensity: l.intensity === "heavy" ? "dense" : l.intensity,
-    durations: (l.durations as Record<string, number>) || {},
-    audience: "",
-    collect: "заявка через бота",
-    waitlist_goal: l.waitlist_goal ?? 0,
-    waitlist: 0,
-    paid: 0,
-    paid_goal: l.waitlist_goal ?? 0,
-    unrolled_on: l.status === "draft" ? "" : l.created_at.slice(0, 10),
-    status: statusFor(l),
-    readiness: l.readiness || {},
-    archived: !!l.archived_at,
-  };
-}
+const planKey = (id: string) => ["launch-plan", id];
+const evidenceKey = (id: string) => ["launch-evidence", id];
+const linesKey = (id: string) => ["launch-lines", id];
 
 export default function LaunchesPage() {
   const qc = useQueryClient();
@@ -89,7 +59,6 @@ export default function LaunchesPage() {
   const [frame, setFrame] = React.useState(false);
   const [slotId, setSlotId] = React.useState<string | null>(null);
   const [focusDate, setFocusDate] = React.useState<string | null>(null);
-  const [store, setStore] = React.useState<Record<string, LaunchState>>({});
 
   const { data: apiLaunches, isLoading } = useQuery({
     queryKey: LAUNCHES_KEY,
@@ -111,206 +80,197 @@ export default function LaunchesPage() {
           format: (it as { content_format?: string | null }).content_format || "any",
         });
       });
-      Object.values(out).forEach((list) =>
-        list.sort((a, b) => (a.title < b.title ? -1 : 1)));
       return out;
     },
     staleTime: 60_000,
   });
 
   const launches = React.useMemo(
-    () => (apiLaunches || []).map(toModuleLaunch), [apiLaunches]);
-
-  /** Развернуть состояние запуска, которого ещё нет в сторе. */
-  const stateFor = React.useCallback((l: Launch): LaunchState => {
-    const p = l.unrolled_on ? buildPlan(l) : null;
-    const slots = p && !p.error ? slotsFor(l, p.windows, bank || {}) : [];
-    const lines: StoryLine[] = [];
-    linkLines(lines, slots);
-    return {
-      plan: p, slots, evidence: evidenceSeed(), lines,
-      readiness: { ...l.readiness }, tasks: {}, bank: bank || {}, proofs: {},
-    };
-  }, [bank]);
-
+    () => (apiLaunches || []).map(toLaunch), [apiLaunches]);
   const launch = launches.find((x) => x.id === lid) || null;
-  const data = lid ? store[lid] : null;
 
-  // Состояние поднимается лениво: разворачивать план для каждого запуска
-  // в списке незачем — там достаточно окон и числа слотов.
-  React.useEffect(() => {
-    if (!launch || store[launch.id]) return;
-    setStore((s) => ({ ...s, [launch.id]: stateFor(launch) }));
-  }, [launch, store, stateFor]);
+  const { data: planRes } = useQuery({
+    queryKey: planKey(lid),
+    queryFn: () => getPlan(lid),
+    enabled: Boolean(lid),
+  });
+  const { data: evidenceRows } = useQuery({
+    queryKey: evidenceKey(lid),
+    queryFn: () => getEvidence(lid),
+    enabled: Boolean(lid),
+  });
+  const { data: lineRows } = useQuery({
+    queryKey: linesKey(lid),
+    queryFn: () => listStoryLines(lid),
+    enabled: Boolean(lid),
+  });
+
+  const data: LaunchState | null = React.useMemo(() => {
+    if (!launch) return null;
+    return {
+      plan: planRes ? toPlan(planRes) : null,
+      slots: (planRes?.slots || []).map(toSlot),
+      evidence: evidenceRows ? toEvidence(evidenceRows) : evidenceSeed(),
+      proofs: evidenceRows ? toProofs(evidenceRows) : {},
+      lines: (lineRows || []).map(toLine),
+      readiness: launch.readiness,
+      tasks: {},
+      bank: bank || {},
+    };
+  }, [launch, planRes, evidenceRows, lineRows, bank]);
 
   const report = React.useMemo(
     () => (launch && data
-      ? buildReport({ launch, slots: data.slots, evidence: data.evidence, lines: data.lines, readiness: data.readiness })
+      ? buildReport({
+        launch, slots: data.slots, evidence: data.evidence,
+        lines: data.lines, readiness: data.readiness,
+      })
       : null),
     [launch, data]);
 
-  const patch = (id: string, fn: (d: LaunchState) => LaunchState) =>
-    setStore((s) => (s[id] ? { ...s, [id]: fn(s[id]) } : s));
+  const invalidatePlan = () => qc.invalidateQueries({ queryKey: planKey(lid) });
+  const fail = (fallback: string) => (e: unknown) =>
+    launchToast(e instanceof ApiError ? e.detail : fallback);
 
-  /* ─── мутации, которые доходят до бэкенда ─── */
+  /* ─── правки, которые уходят на сервер ─── */
+
+  const slotMutation = useMutation({
+    mutationFn: (v: { id: string; patch: Parameters<typeof updateSlot>[2] }) =>
+      updateSlot(lid, v.id, v.patch),
+    onSuccess: invalidatePlan,
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        // Конфликт версий — не «ошибка сети»: чужую правку надо показать,
+        // а не молча перетереть.
+        invalidatePlan();
+        launchToast("Слот успели изменить в другом окне — план обновлён, повторите правку");
+        return;
+      }
+      fail("Не удалось сохранить слот")(e);
+    },
+  });
+
+  const setSlot = (id: string, upd: Partial<Slot>) => {
+    const slot = data?.slots.find((s) => s.id === id);
+    if (!slot) return;
+    const patch: Parameters<typeof updateSlot>[2] = { version: slot.version };
+    if (upd.date !== undefined) patch.scheduled_date = upd.date;
+    if (upd.rubric !== undefined) patch.rubric = upd.rubric;
+    if (upd.meaning !== undefined) patch.meaning = upd.meaning;
+    if (upd.is_pinned !== undefined) patch.is_pinned = upd.is_pinned;
+    if (upd.reaction !== undefined && upd.reaction !== null) patch.reaction = upd.reaction;
+    if (upd.status !== undefined) patch.status = upd.status;
+    if (upd.draft !== undefined && upd.draft !== null) patch.draft_state = upd.draft;
+    if (upd.chars !== undefined) patch.chars = upd.chars;
+    if (upd.text !== undefined) patch.full_text = upd.text;
+    if (upd.idea !== undefined && upd.idea !== null) patch.talking_point_text = upd.idea;
+    if (upd.markup_origin === "human") patch.confirm = true;
+    slotMutation.mutate({ id, patch });
+  };
+
+  const evidenceMutation = useMutation({
+    mutationFn: (v: { key: string; state: "proof" | "claimed" | "none"; dismissed?: boolean }) =>
+      updateEvidence(lid, v.key, { state: v.state, task_dismissed: v.dismissed }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evidenceKey(lid) }),
+    onError: fail("Не удалось сохранить фактуру"),
+  });
+
+  const confirmStageMutation = useMutation({
+    // Этап целиком одним запросом: в нём бывает сорок слотов, и сорок
+    // отдельных PATCH дали бы сорок гонок за версию.
+    mutationFn: (stage: number) => apiConfirmStage(lid, stage),
+    onSuccess: (r) => {
+      invalidatePlan();
+      launchToast("Разметка подтверждена: " + plural(r.confirmed, "слот", "слота", "слотов"));
+    },
+    onError: fail("Не удалось подтвердить разметку"),
+  });
+
+  const addSlotMutation = useMutation({
+    mutationFn: (v: { date: string; platform: string; rubric: string; meaning: string }) =>
+      createSlot(lid, {
+        scheduled_date: v.date, platform: v.platform,
+        rubric: v.rubric, meaning: v.meaning,
+      }),
+    onSuccess: (slot) => {
+      invalidatePlan();
+      setSlotId(slot.id);
+      launchToast("Слот добавлен и закреплён");
+    },
+    onError: fail("Не удалось добавить слот"),
+  });
+
+  const delSlotMutation = useMutation({
+    mutationFn: (id: string) => deleteSlot(lid, id),
+    onSuccess: () => { invalidatePlan(); setSlotId(null); launchToast("Слот удалён"); },
+    onError: fail("Не удалось удалить слот"),
+  });
+
+  const lineMutation = useMutation({
+    mutationFn: (v: { id: string; body: Parameters<typeof updateStoryLine>[2] }) =>
+      updateStoryLine(lid, v.id, v.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: linesKey(lid) });
+      invalidatePlan();
+    },
+    onError: fail("Не удалось привязать линию"),
+  });
+
+  const rebuildMutation = useMutation({
+    mutationFn: () => generatePlan(lid),
+    onSuccess: (res) => {
+      invalidatePlan();
+      qc.invalidateQueries({ queryKey: LAUNCHES_KEY });
+      const empty = res.slots.filter((s) => !s.knowledge_item_id).length;
+      launchToast(empty > 0
+        ? `План собран: ${res.slots.length} слотов. Без идеи ${empty} — причина указана в каждом`
+        : `План собран: ${res.slots.length} слотов, идеи подобраны`);
+      setFrame(false);
+    },
+    onError: fail("Не удалось собрать план"),
+  });
 
   const readinessMutation = useMutation({
-    mutationFn: (v: { id: string; readiness: Record<string, boolean> }) =>
-      updateLaunch(v.id, { readiness: v.readiness }),
-    onError: (e) => launchToast(e instanceof ApiError ? e.detail : "Не удалось сохранить готовность"),
+    mutationFn: (readiness: Record<string, boolean>) =>
+      updateLaunch(lid, { readiness }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: LAUNCHES_KEY }),
+    onError: fail("Не удалось сохранить готовность"),
   });
 
   const createMutation = useMutation({
-    mutationFn: (v: { draft: Launch; f: WizardForm }) =>
-      createLaunch({
+    mutationFn: async (v: { draft: Launch; f: WizardForm }) => {
+      const created = await createLaunch({
         name: v.f.name || "Новый запуск",
         sales_open: v.draft.sales_open,
         sales_close: v.draft.sales_close || null,
         key_event_date: v.draft.key_event_date || null,
         key_event_type: v.draft.key_event_type || null,
         product_name: v.f.product || null,
-        intensity: (v.f.intensity === "dense" ? "heavy" : v.f.intensity) as "light" | "normal" | "heavy",
+        intensity: toApiIntensity(v.f.intensity),
         waitlist_goal: v.f.waitlist_goal || null,
-      }),
+      });
+      // Мастер обещает «создать и развернуть план» — разворачиваем сразу,
+      // иначе человек попадает в Штаб на пустой запуск.
+      await generatePlan(created.id);
+      return created;
+    },
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: LAUNCHES_KEY });
-      const l = toModuleLaunch(created);
-      l.unrolled_on = today();
-      l.status = "warm";
-      const st = stateFor(l);
-      setStore((s) => ({ ...s, [created.id]: st }));
       setWizard(false); setLid(created.id); setLtab("hq");
-      launchToast("Запуск создан · развёрнуто " + plural(st.slots.length, "слот", "слота", "слотов"));
+      launchToast("Запуск создан, план развёрнут");
     },
-    onError: (e) => launchToast(e instanceof ApiError ? e.detail : "Не удалось создать запуск"),
+    onError: fail("Не удалось создать запуск"),
   });
 
   const archiveMutation = useMutation({
-    mutationFn: (id: string) => archiveLaunch(id),
+    mutationFn: () => archiveLaunch(lid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LAUNCHES_KEY });
       setFrame(false); setLid("");
       launchToast("Запуск в архиве");
     },
-    onError: (e) => launchToast(e instanceof ApiError ? e.detail : "Не удалось архивировать"),
+    onError: fail("Не удалось архивировать"),
   });
-
-  /* ─── операции над состоянием запуска ─── */
-
-  const setSlot = (id: string, upd: Partial<Slot>) =>
-    patch(lid, (d) => ({ ...d, slots: d.slots.map((s) => (s.id === id ? { ...s, ...upd } : s)) }));
-
-  const setEvidence = (key: string, st: LaunchState["evidence"][string]) =>
-    patch(lid, (d) => ({ ...d, evidence: { ...d.evidence, [key]: st } }));
-
-  const confirmStage = (stage: string) => {
-    let n = 0;
-    patch(lid, (d) => ({
-      ...d,
-      slots: d.slots.map((s) => {
-        if (s.stage === stage && s.markup_origin !== "human") { n++; return { ...s, markup_origin: "human" as const }; }
-        return s;
-      }),
-    }));
-    launchToast("Разметка подтверждена: " + plural(n, "слот", "слота", "слотов"));
-  };
-
-  const goDay = (date: string, tab?: LaunchTab) => { setFocusDate(date); setLtab(tab || "plan"); };
-
-  const winOf = (date: string) =>
-    data && data.plan && !data.plan.error
-      ? data.plan.windows.find((w) => diff(w.from, date) >= 0 && diff(date, w.to) >= 0)
-      : null;
-
-  const moveSlot = (id: string, date: string) => {
-    const w = winOf(date);
-    if (!w) { launchToast("Эта дата вне оси запуска"); return; }
-    const prev = data!.slots;
-    patch(lid, (d) => ({
-      ...d,
-      slots: d.slots.map((s) => (s.id === id
-        ? { ...s, date, stage: w.key, is_last_day: w.key === "sales" && date === w.to } : s)),
-    }));
-    launchToast("Перенесено на " + fmt(date), () => patch(lid, (d) => ({ ...d, slots: prev })));
-  };
-
-  const addSlot = (date: string, platform: string) => {
-    const w = winOf(date);
-    if (!w || !data) { launchToast("Эта дата вне оси запуска"); return; }
-    const fits = FIT[platform];
-    const quota = QUOTA[w.key];
-    const rubric = Object.keys(quota).sort((a, b) => quota[b] - quota[a])
-      .find((k) => rubByKey[k].formats.some((f) => fits.indexOf(f) >= 0)) || "background";
-    const used: Record<string, number> = {};
-    data.slots.forEach((s) => { if (s.idea) used[s.idea] = 1; });
-    const free = (data.bank[rubric] || []).filter((b) => !used[b.title] && fits.indexOf(b.format) >= 0);
-    const mean = MEANINGS.filter((m) => m.q === rubByKey[rubric].q)[0];
-    const s: Slot = {
-      id: lid + "-m" + Math.random().toString(36).slice(2, 7),
-      date, platform: platform as Slot["platform"], stage: w.key, rubric,
-      is_last_day: w.key === "sales" && date === w.to, is_pinned: true, version: 1,
-      idea: free.length ? free[0].title : null,
-      reason: free.length ? null : "слот добавлен вручную — идею надо выбрать",
-      meaning: mean.key, trigger_key: rubByKey[rubric].lever, markup_origin: "human",
-      status: "planned", draft: null, chars: 0, reaction: null, line_id: null, line_role: null,
-    };
-    patch(lid, (d) => ({ ...d, slots: d.slots.concat([s]) }));
-    launchToast("Слот добавлен и закреплён",
-      () => patch(lid, (d) => ({ ...d, slots: d.slots.filter((x) => x.id !== s.id) })));
-    setSlotId(s.id);
-  };
-
-  const delSlot = (id: string) => {
-    const prev = data!.slots;
-    patch(lid, (d) => ({ ...d, slots: d.slots.filter((s) => s.id !== id) }));
-    setSlotId(null);
-    launchToast("Слот удалён", () => patch(lid, (d) => ({ ...d, slots: prev })));
-  };
-
-  const setLineRole = (slotIdArg: string, lineId: string, role: "announce" | "close" | null) => {
-    patch(lid, (d) => {
-      const slots = d.slots.map((s) => {
-        if (s.id === slotIdArg) return { ...s, line_id: role ? lineId : null, line_role: role };
-        if (role && s.line_id === lineId && s.line_role === role) return { ...s, line_id: null, line_role: null };
-        return s;
-      });
-      const lines = d.lines.map((x) => {
-        if (x.id !== lineId) return x;
-        const y = { ...x };
-        if (role === "announce") { y.announce_slot = slotIdArg; y.announced_on = (slots.find((s) => s.id === slotIdArg) || { date: "" }).date; }
-        if (role === "close") { y.close_slot = slotIdArg; y.closes_on = (slots.find((s) => s.id === slotIdArg) || { date: "" }).date; }
-        return y;
-      });
-      return { ...d, slots, lines };
-    });
-    launchToast(role === "announce" ? "Этот пост — анонс линии"
-      : role === "close" ? "Этот пост закрывает обещание" : "Связь с линией снята");
-  };
-
-  const toCanvas = (s: Slot) => {
-    setSlot(s.id, { draft: "writing" });
-    launchToast("Задание ушло на канвас: рубрика, вопрос, рычаг, смысл и пруф");
-  };
-
-  const rebuild = (durations: Record<string, number>) => {
-    if (!launch || !data) return;
-    const l2: Launch = { ...launch, durations };
-    const p = buildPlan(l2, today());
-    if (p.error) { launchToast(p.error); return; }
-    const fresh = slotsFor(l2, p.windows, data.bank);
-    const keep = data.slots.filter((s) => s.is_pinned || s.status === "published");
-    const merged = fresh
-      .filter((s) => !keep.some((k) => k.date === s.date && k.platform === s.platform))
-      .concat(keep);
-    merged.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const lines = data.lines.map((x) => ({ ...x, announce_slot: null, close_slot: null }));
-    linkLines(lines, merged);
-    patch(lid, (d) => ({ ...d, plan: p, slots: merged, lines }));
-    setFrame(false);
-    launchToast(data.slots.length
-      ? "План пересобран · " + plural(keep.length, "слот", "слота", "слотов") + " сохранено"
-      : "План развёрнут · " + plural(merged.length, "слот", "слота", "слотов") + " по этапам");
-  };
 
   /* ─── горячие клавиши открытой панели слота ─── */
   React.useEffect(() => {
@@ -318,12 +278,14 @@ export default function LaunchesPage() {
       if (e.key === "Escape") { setFrame(false); setSlotId(null); return; }
       const tag = (document.activeElement?.tagName || "").toLowerCase();
       if (!slotId || /input|textarea|select/.test(tag)) return;
-      const d = store[lid]; if (!d) return;
-      const s = d.slots.find((x) => x.id === slotId); if (!s) return;
+      const s = data?.slots.find((x) => x.id === slotId);
+      if (!s) return;
       const k = e.key.toLowerCase();
-      if (k === "p") { setSlot(slotId, { is_pinned: !s.is_pinned }); launchToast(s.is_pinned ? "Слот больше не закреплён" : "Слот закреплён"); }
-      if (k === "c" && s.markup_origin !== "human") { setSlot(slotId, { markup_origin: "human" }); launchToast("Разметка подтверждена"); }
-      if ("123".indexOf(e.key) >= 0 && s.status === "published") { setSlot(slotId, { reaction: +e.key }); launchToast("Отметка реакции учтена — уйдёт в разбор"); }
+      if (k === "p") setSlot(slotId, { is_pinned: !s.is_pinned });
+      if (k === "c" && s.markup_origin !== "human") setSlot(slotId, { markup_origin: "human" });
+      if ("123".indexOf(e.key) >= 0 && s.status === "published") {
+        setSlot(slotId, { reaction: +e.key });
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -341,17 +303,16 @@ export default function LaunchesPage() {
         />
       );
     }
+    // Списку нужны только окна и число слотов. Гонять за планом каждого
+    // запуска ради этого незачем — разворачиваем ось локально тем же
+    // алгоритмом, что и сервер.
     const rows: ListRow[] = launches.map((l) => {
-      const st = store[l.id];
-      const p = st ? st.plan : (l.unrolled_on ? buildPlan(l) : null);
-      const slots = st ? st.slots : (p && !p.error ? slotsFor(l, p.windows, bank || {}) : []);
+      const p = l.unrolled_on ? buildPlan(l) : null;
+      const slots = p && !p.error ? slotsFor(l, p.windows, bank || {}) : [];
       return {
         launch: l, plan: p, slots,
         report: buildReport({
-          launch: l, slots,
-          evidence: st ? st.evidence : evidenceSeed(),
-          lines: st ? st.lines : [],
-          readiness: l.readiness,
+          launch: l, slots, evidence: evidenceSeed(), lines: [], readiness: l.readiness,
         }),
       };
     });
@@ -365,16 +326,52 @@ export default function LaunchesPage() {
   }
 
   if (!data || !report) {
-    return <div className="pad"><p className="lc-note">Разворачиваю запуск…</p></div>;
+    return <div className="pad"><p className="lc-note">Загружаю запуск…</p></div>;
   }
 
   const slot = data.slots.find((s) => s.id === slotId) || null;
+
   const ctx: LaunchCtx = {
     launch, data, report,
-    patch: (fn) => patch(lid, fn),
-    setEvidence, setSlot, confirmStage, goDay, focusDate, setFocusDate,
-    openSlot: setSlotId, slotId, toast: launchToast, setLtab, rebuild,
-    moveSlot, addSlot, delSlot, setLineRole, toCanvas,
+    patch: (fn) => {
+      // Единственное, что правится «состоянием», — готовность продукта:
+      // это чеклист из пяти галочек, и он живёт на самом запуске.
+      const next = fn(data);
+      if (next.readiness !== data.readiness) readinessMutation.mutate(next.readiness);
+    },
+    setEvidence: (key, st) => evidenceMutation.mutate({ key, state: st }),
+    setSlot,
+    confirmStage: (stage) => confirmStageMutation.mutate(byKey[stage].n),
+    goDay: (date, tab) => { setFocusDate(date); setLtab(tab || "plan"); },
+    focusDate, setFocusDate, openSlot: setSlotId, slotId,
+    toast: launchToast, setLtab,
+    rebuild: () => rebuildMutation.mutate(),
+    moveSlot: (id, date) => setSlot(id, { date }),
+    addSlot: (date, platform) => {
+      const window = data.plan?.windows.find((w) => date >= w.from && date <= w.to);
+      if (!window) { launchToast("Эта дата вне оси запуска"); return; }
+      const fits = FIT[platform];
+      const quota = QUOTA[window.key];
+      const rubric = Object.keys(quota).sort((a, b) => quota[b] - quota[a])
+        .find((k) => rubByKey[k].formats.some((f) => fits.indexOf(f) >= 0)) || "background";
+      const meaning = MEANINGS.filter((m) => m.q === rubByKey[rubric].q)[0];
+      addSlotMutation.mutate({ date, platform, rubric, meaning: meaning.key });
+    },
+    delSlot: (id) => delSlotMutation.mutate(id),
+    setLineRole: (slotIdArg, lineId, role) => {
+      lineMutation.mutate({
+        id: lineId,
+        body: role === "announce" ? { announce_slot_id: slotIdArg }
+          : role === "close" ? { close_slot_id: slotIdArg }
+            : { announce_slot_id: null, close_slot_id: null },
+      });
+      launchToast(role === "announce" ? "Этот пост — анонс линии"
+        : role === "close" ? "Этот пост закрывает обещание" : "Связь с линией снята");
+    },
+    toCanvas: (s) => {
+      setSlot(s.id, { draft: "writing" });
+      launchToast("Задание ушло на канвас: рубрика, вопрос, рычаг, смысл и пруф");
+    },
   };
 
   return (
@@ -400,36 +397,11 @@ export default function LaunchesPage() {
                 " · применится при пересборке плана");
             }
           }}
-          onRebuild={rebuild}
-          onArchive={() => archiveMutation.mutate(lid)}
+          onRebuild={() => rebuildMutation.mutate()}
+          onArchive={() => archiveMutation.mutate()}
         />
       )}
       {slot && <LaunchSlotDrawer slot={slot} ctx={ctx} onClose={() => setSlotId(null)} />}
-      {/* Готовность продукта — единственное, что из Штаба уходит в базу сразу. */}
-      <ReadinessSync
-        launchId={lid}
-        readiness={data.readiness}
-        onSave={(readiness) => readinessMutation.mutate({ id: lid, readiness })}
-      />
     </>
   );
-}
-
-/**
- * Сохранение готовности с задержкой: чеклист щёлкают подряд, и слать пять
- * запросов подряд незачем.
- */
-function ReadinessSync({
-  launchId, readiness, onSave,
-}: {
-  launchId: string; readiness: Record<string, boolean>; onSave: (r: Record<string, boolean>) => void;
-}) {
-  const first = React.useRef(true);
-  React.useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    const t = setTimeout(() => onSave(readiness), 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(readiness), launchId]);
-  return null;
 }

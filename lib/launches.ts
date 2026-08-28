@@ -25,6 +25,22 @@ export interface LaunchOut {
   notes: string | null;
   archived_at: string | null;
   created_at: string;
+
+  /** Рамка запуска. */
+  price: string | null;
+  audience: string | null;
+  collect: string | null;
+  waitlist: number | null;
+  paid: number | null;
+  paid_goal: number | null;
+  unrolled_on: string | null;
+
+  /**
+   * Режим: черновик · прогрев · окно продаж · закрыт.
+   * Считается на сервере из дат — клиент его не выводит, чтобы четыре места
+   * в интерфейсе не вывели его четырьмя способами.
+   */
+  mode: "draft" | "warm" | "sales" | "closed";
 }
 
 export interface LaunchCreate {
@@ -56,6 +72,9 @@ export interface LaunchSlot {
   platform: string;
   status: string;
   launch_stage: number | null;
+  /** Рубрика конструктора — одна из двенадцати. */
+  rubric: string | null;
+  /** Смысл покупателя — один из сорока. */
   meaning: string | null;
   trigger_key: string | null;
   checkpoints: string[];
@@ -70,6 +89,12 @@ export interface LaunchSlot {
   full_text: string;
   /** Почему слот пуст — показываем дословно. */
   notes: string | null;
+  empty_reason: string | null;
+  draft_state: "writing" | "ready" | null;
+  chars: number | null;
+  reaction: number | null;
+  line_role: "announce" | "close" | null;
+  story_line_id: string | null;
   version: number;
 }
 
@@ -116,6 +141,8 @@ export interface StoryLine {
   announced_on: string | null;
   closes_on: string | null;
   is_closed: boolean;
+  announce_slot_id: string | null;
+  close_slot_id: string | null;
 }
 
 export interface LaunchReference {
@@ -242,6 +269,130 @@ export async function createStoryLine(
     method: "POST",
     body,
   });
+}
+
+export interface SlotPatch {
+  scheduled_date?: string;
+  rubric?: string | null;
+  meaning?: string | null;
+  checkpoints?: string[];
+  trigger_key?: string | null;
+  knowledge_item_id?: string | null;
+  talking_point_text?: string | null;
+  has_proof?: boolean;
+  is_peak?: boolean;
+  is_pinned?: boolean;
+  status?: string;
+  reaction?: number;
+  draft_state?: "writing" | "ready";
+  chars?: number;
+  full_text?: string;
+  confirm?: boolean;
+  /** Обязателен при правке: расхождение отдаётся 409, а не тихой перезаписью. */
+  version?: number;
+}
+
+export async function createSlot(
+  launchId: string,
+  body: {
+    scheduled_date: string;
+    platform: string;
+    rubric?: string | null;
+    meaning?: string | null;
+    knowledge_item_id?: string | null;
+  },
+): Promise<LaunchSlot> {
+  return apiFetch<LaunchSlot>(`/api/v1/launches/${launchId}/slots`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateSlot(
+  launchId: string,
+  slotId: string,
+  body: SlotPatch,
+): Promise<LaunchSlot> {
+  return apiFetch<LaunchSlot>(`/api/v1/launches/${launchId}/slots/${slotId}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export async function deleteSlot(launchId: string, slotId: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/launches/${launchId}/slots/${slotId}`, {
+    method: "DELETE",
+  });
+}
+
+/** Подтвердить разметку целого этапа одним запросом, а не сорока. */
+export async function confirmStage(
+  launchId: string,
+  stage: number,
+): Promise<{ confirmed: number }> {
+  return apiFetch(`/api/v1/launches/${launchId}/slots/confirm`, {
+    method: "POST",
+    body: { stage },
+  });
+}
+
+export type EvidenceState = "proof" | "claimed" | "none";
+
+export interface EvidenceRow {
+  meaning_key: string;
+  state: EvidenceState;
+  proof_note: string | null;
+  proof_url: string | null;
+  task_dismissed: boolean;
+}
+
+export async function getEvidence(launchId: string): Promise<EvidenceRow[]> {
+  return apiFetch<EvidenceRow[]>(`/api/v1/launches/${launchId}/evidence`);
+}
+
+export async function updateEvidence(
+  launchId: string,
+  meaningKey: string,
+  body: { state: EvidenceState; proof_note?: string | null; task_dismissed?: boolean },
+): Promise<EvidenceRow> {
+  return apiFetch<EvidenceRow>(
+    `/api/v1/launches/${launchId}/evidence/${meaningKey}`,
+    { method: "PATCH", body },
+  );
+}
+
+export interface LaunchTask {
+  meaning_key: string;
+  title: string;
+  question: number;
+  needed_by: string | null;
+  slot_dates: string[];
+}
+
+export async function getTasks(launchId: string): Promise<LaunchTask[]> {
+  return apiFetch<LaunchTask[]>(`/api/v1/launches/${launchId}/tasks`);
+}
+
+/**
+ * Правка линии. `is_closed` снаружи не задаётся: сервер выводит его из того,
+ * стоит ли под раскрытие конкретный пост.
+ */
+export async function updateStoryLine(
+  launchId: string,
+  lineId: string,
+  body: {
+    title?: string;
+    payoff?: string | null;
+    announced_on?: string | null;
+    closes_on?: string | null;
+    announce_slot_id?: string | null;
+    close_slot_id?: string | null;
+  },
+): Promise<StoryLine> {
+  return apiFetch<StoryLine>(
+    `/api/v1/launches/${launchId}/story-lines/${lineId}`,
+    { method: "PATCH", body },
+  );
 }
 
 export async function getReference(): Promise<LaunchReference> {

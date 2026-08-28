@@ -307,7 +307,7 @@ export function LaunchAxis({
         </div>
       )}
 
-      {(mode !== "preview" || p.compressed.length > 0 || p.dropped.length > 0) && (
+      {(mode !== "preview" || p.notes.length > 0) && (
         <div className="lc-ax-foot">
           {mode !== "preview" && (
             <span className="lgd">
@@ -316,11 +316,9 @@ export function LaunchAxis({
               <span><i data-s="proof" />есть фактура</span>
             </span>
           )}
-          {(p.compressed.length > 0 || p.dropped.length > 0) && (
+          {p.notes.length > 0 && (
             <span className="w">
-              до продаж мало времени — план урезан:{" "}
-              {p.compressed.map((c) => c.name.toLowerCase() + " " + c.from + " → " + c.to)
-                .concat(p.dropped.map((c) => c.name.toLowerCase() + " выброшен")).join(", ")}
+              до продаж мало времени — план урезан: {p.notes.join(", ")}
             </span>
           )}
         </div>

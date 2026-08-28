@@ -299,6 +299,14 @@ export interface PlanResult {
   windows: Window[];
   compressed: Array<{ key: string; name: string; from: number; to: number }>;
   dropped: Array<{ key: string; name: string; why: string }>;
+  /**
+   * Что урезано — готовыми строками.
+   *
+   * Сервер отдаёт эту же мысль текстом, клиент собирает её из объектов.
+   * Ось печатает `notes` и не знает, кто их составил: иначе пришлось бы
+   * держать две ветки вывода одного и того же предупреждения.
+   */
+  notes: string[];
   error: string | null;
   avail: number;
   note: string | null;
@@ -311,7 +319,9 @@ export interface PlanResult {
  * Детерминированный, без модели: план обязан быть воспроизводимым.
  */
 export function plan(l: Partial<Launch>, floorDate?: string): PlanResult {
-  const out: PlanResult = { windows: [], compressed: [], dropped: [], error: null, avail: 0, note: null };
+  const out: PlanResult = {
+    windows: [], compressed: [], dropped: [], notes: [], error: null, avail: 0, note: null,
+  };
   if (!l.sales_open) {
     out.error = "Не задана дата открытия продаж — от неё считается весь план.";
     return out;
@@ -381,6 +391,9 @@ export function plan(l: Partial<Launch>, floorDate?: string): PlanResult {
     .filter((k) => win[k]).map((k) => win[k]);
   const close = l.sales_close || add(l.sales_open, byKey.sales.def - 1);
   out.windows.push({ key: "sales", from: l.sales_open, to: close, days: diff(l.sales_open, close) + 1 });
+  out.notes = out.compressed
+    .map((c) => c.name.toLowerCase() + " " + c.from + " → " + c.to)
+    .concat(out.dropped.map((c) => c.name.toLowerCase() + " выброшен"));
   return out;
 }
 
